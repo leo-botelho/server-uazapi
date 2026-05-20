@@ -45,12 +45,12 @@ export function InstanceConnectActions({
         })
         if (!res.ok) {
           const body = (await res.json()) as { error?: string }
-          throw new Error(body.error ?? 'Failed to disconnect')
+          throw new Error(body.error ?? 'Falha ao desconectar')
         }
-        toast.success('Instance disconnected')
+        toast.success('Instância desconectada')
         router.refresh()
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to disconnect')
+        toast.error(err instanceof Error ? err.message : 'Falha ao desconectar')
       }
     })
   }
@@ -61,7 +61,7 @@ export function InstanceConnectActions({
         const res = await fetch(`/api/instances/${instanceId}/reset`, { method: 'POST' })
         if (!res.ok) {
           const body = (await res.json()) as { error?: string }
-          throw new Error(body.error ?? 'Failed to reset')
+          throw new Error(body.error ?? 'Falha ao reiniciar')
         }
         toast.success('Runtime reiniciado com sucesso')
         router.refresh()
@@ -79,13 +79,13 @@ export function InstanceConnectActions({
         })
         if (!res.ok) {
           const body = (await res.json()) as { error?: string }
-          throw new Error(body.error ?? 'Failed to generate token')
+          throw new Error(body.error ?? 'Falha ao gerar token')
         }
         const data = (await res.json()) as ReconnectTokenResponse
         setReconnectToken(data.token)
-        toast.success('Reconnect token generated')
+        toast.success('Token de reconexão gerado')
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to generate token')
+        toast.error(err instanceof Error ? err.message : 'Falha ao gerar token')
       }
     })
   }
@@ -102,9 +102,9 @@ export function InstanceConnectActions({
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <p className="text-sm font-medium">Scan QR Code</p>
+          <p className="text-sm font-medium">Escanear QR Code</p>
           <Button variant="ghost" size="sm" onClick={() => setConnectMethod(null)}>
-            Back
+            Voltar
           </Button>
         </div>
         <QrDisplay instanceId={instanceId} uazapiToken={uazapiToken} />
@@ -116,9 +116,9 @@ export function InstanceConnectActions({
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <p className="text-sm font-medium">Pairing Code</p>
+          <p className="text-sm font-medium">Código de pareamento</p>
           <Button variant="ghost" size="sm" onClick={() => setConnectMethod(null)}>
-            Back
+            Voltar
           </Button>
         </div>
         <PairingCodeDisplay
@@ -134,7 +134,7 @@ export function InstanceConnectActions({
     <div className="space-y-6">
       {/* Current status */}
       <div className="flex items-center justify-between">
-        <span className="text-sm text-muted-foreground">Current status</span>
+        <span className="text-sm text-muted-foreground">Status atual</span>
         <ConnectionStatus instanceId={instanceId} initialStatus={currentStatus} />
       </div>
 
@@ -147,7 +147,7 @@ export function InstanceConnectActions({
               className="gap-2"
             >
               <Power className="size-4" />
-              Connect via QR Code
+              Conectar via QR Code
             </Button>
             <Button
               variant="outline"
@@ -155,7 +155,7 @@ export function InstanceConnectActions({
               className="gap-2"
             >
               <Key className="size-4" />
-              Connect via Pairing Code
+              Conectar via código de pareamento
             </Button>
           </>
         )}
@@ -195,10 +195,9 @@ export function InstanceConnectActions({
 
       {/* Reconnect token */}
       <div className="space-y-2 border-t border-border pt-4">
-        <p className="text-sm font-medium">Reconnect Token</p>
+        <p className="text-sm font-medium">Token de reconexão</p>
         <p className="text-xs text-muted-foreground">
-          Generate a time-limited token that allows the client to reconnect
-          without admin access.
+          Gera um token com validade limitada que permite ao cliente reconectar sem acesso de administrador.
         </p>
 
         <Button
@@ -213,7 +212,7 @@ export function InstanceConnectActions({
           ) : (
             <Key className="size-3.5" />
           )}
-          {isGeneratingToken ? 'Generating...' : 'Generate Token'}
+          {isGeneratingToken ? 'Gerando...' : 'Gerar token'}
         </Button>
 
         {reconnectToken && (
@@ -225,7 +224,7 @@ export function InstanceConnectActions({
               size="icon"
               variant="outline"
               onClick={copyToken}
-              aria-label="Copy token"
+              aria-label="Copiar token"
               className="shrink-0"
             >
               {tokenCopied ? (

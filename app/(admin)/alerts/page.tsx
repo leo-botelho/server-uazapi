@@ -30,7 +30,7 @@ async function RecentNotifications() {
   if (!logs?.length) {
     return (
       <div className="py-8 text-center text-muted-foreground text-sm">
-        No notifications sent yet.
+        Nenhuma notificação enviada ainda.
       </div>
     )
   }
@@ -39,11 +39,11 @@ async function RecentNotifications() {
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Instance</TableHead>
-          <TableHead>Channel</TableHead>
-          <TableHead>Recipient</TableHead>
+          <TableHead>Instância</TableHead>
+          <TableHead>Canal</TableHead>
+          <TableHead>Destinatário</TableHead>
           <TableHead>Status</TableHead>
-          <TableHead>Sent</TableHead>
+          <TableHead>Enviado</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -113,19 +113,18 @@ export default function AlertsPage() {
       <div className="flex items-center gap-3">
         <Bell className="size-6 text-muted-foreground" />
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Alerts</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Alertas</h1>
           <p className="text-muted-foreground">
-            Disconnect notifications and alert history
+            Notificações de desconexão e histórico de alertas
           </p>
         </div>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Alert Configuration</CardTitle>
+          <CardTitle>Configuração de alertas</CardTitle>
           <CardDescription>
-            Alert channels are configured per-instance. Go to an instance to
-            set up email, WhatsApp, or n8n webhook notifications.
+            Os canais de alerta são configurados por instância. Acesse uma instância para configurar notificações por e-mail, WhatsApp ou webhook n8n.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -134,16 +133,16 @@ export default function AlertsPage() {
             className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
           >
             <ExternalLink className="size-3.5" />
-            Manage Instances
+            Gerenciar instâncias
           </Link>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>Recent Notifications</CardTitle>
+          <CardTitle>Notificações recentes</CardTitle>
           <CardDescription>
-            Last 50 alert notifications sent across all instances
+            Últimas 50 notificações de alerta enviadas em todas as instâncias
           </CardDescription>
         </CardHeader>
         <CardContent>

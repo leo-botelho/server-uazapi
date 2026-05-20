@@ -51,7 +51,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     return NextResponse.json({ qrcode: result.qrcode, status: result.status })
   } catch (err) {
-    console.error('[connect/qr] uazapi error:', (err as Error).message)
-    return NextResponse.json({ error: 'Failed to request QR code' }, { status: 502 })
+    const msg = err instanceof Error ? err.message : 'Erro desconhecido'
+    console.error('[connect/qr] uazapi error:', msg)
+    return NextResponse.json({ error: msg }, { status: 502 })
   }
 }

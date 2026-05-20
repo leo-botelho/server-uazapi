@@ -41,9 +41,9 @@ export default async function ReconnectPage({ params }: ReconnectPageProps) {
     <div className="flex min-h-screen items-center justify-center p-4 bg-muted/50">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Reconnect WhatsApp</CardTitle>
+          <CardTitle className="text-2xl">Reconectar WhatsApp</CardTitle>
           <CardDescription>
-            Reconnect your WhatsApp instance: {reconnectToken.instance.name}
+            Reconecte sua instância WhatsApp: {reconnectToken.instance.name}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">

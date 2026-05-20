@@ -80,7 +80,7 @@ export default async function InstanceDetailPage({
             className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
           >
             <ArrowLeft className="size-3.5" />
-            All Instances
+            Todas as instâncias
           </Link>
           <h1 className="text-3xl font-bold tracking-tight">{instance.name}</h1>
           <p className="text-muted-foreground font-mono text-sm">{instance.id}</p>
@@ -90,9 +90,9 @@ export default async function InstanceDetailPage({
 
       <Tabs defaultValue="overview" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="connection">Connection</TabsTrigger>
-          <TabsTrigger value="alerts">Alerts</TabsTrigger>
+          <TabsTrigger value="overview">Visão geral</TabsTrigger>
+          <TabsTrigger value="connection">Conexão</TabsTrigger>
+          <TabsTrigger value="alerts">Alertas</TabsTrigger>
           <TabsTrigger value="logs">Logs</TabsTrigger>
         </TabsList>
 
@@ -101,9 +101,9 @@ export default async function InstanceDetailPage({
           <div className="grid gap-4 md:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle>Instance Details</CardTitle>
+                <CardTitle>Detalhes da instância</CardTitle>
                 <CardDescription>
-                  Basic information about this instance
+                  Informações básicas sobre esta instância
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -113,7 +113,7 @@ export default async function InstanceDetailPage({
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-muted-foreground">
-                    Phone Connected
+                    Telefone conectado
                   </span>
                   <span className="text-sm font-medium">
                     {instance.phone_connected ?? '—'}
@@ -121,13 +121,13 @@ export default async function InstanceDetailPage({
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-muted-foreground">
-                    Profile Name
+                    Nome do perfil
                   </span>
                   <span className="text-sm">{instance.profile_name ?? '—'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-muted-foreground">
-                    Last Disconnected
+                    Última desconexão
                   </span>
                   <span className="text-sm">
                     {instance.last_disconnected_at
@@ -139,15 +139,15 @@ export default async function InstanceDetailPage({
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Created</span>
+                  <span className="text-sm text-muted-foreground">Criado em</span>
                   <span className="text-sm">
                     {new Date(instance.created_at).toLocaleDateString('pt-BR')}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Active</span>
+                  <span className="text-sm text-muted-foreground">Ativo</span>
                   <Badge variant={instance.active ? 'default' : 'secondary'}>
-                    {instance.active ? 'Yes' : 'No'}
+                    {instance.active ? 'Sim' : 'Não'}
                   </Badge>
                 </div>
               </CardContent>
@@ -204,10 +204,9 @@ export default async function InstanceDetailPage({
         <TabsContent value="connection">
           <Card>
             <CardHeader>
-              <CardTitle>Connection Management</CardTitle>
+              <CardTitle>Gerenciamento de conexão</CardTitle>
               <CardDescription>
-                Connect, disconnect, or generate a reconnect token for this
-                instance
+                Conecte, desconecte ou gere um token de reconexão para esta instância
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -248,9 +247,9 @@ export default async function InstanceDetailPage({
         <TabsContent value="logs">
           <Card>
             <CardHeader>
-              <CardTitle>Recent Webhook Events</CardTitle>
+              <CardTitle>Eventos de webhook recentes</CardTitle>
               <CardDescription>
-                Last 10 webhook events received for this instance
+                Últimos 10 eventos de webhook recebidos por esta instância
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -279,7 +278,7 @@ export default async function InstanceDetailPage({
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  No webhook events received for this instance yet.
+                  Nenhum evento de webhook recebido por esta instância ainda.
                 </p>
               )}
             </CardContent>

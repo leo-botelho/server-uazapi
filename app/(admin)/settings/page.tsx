@@ -2,7 +2,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Settings, ExternalLink, Info } from 'lucide-react'
 
 function maskValue(value: string | undefined): string {
-  if (!value) return '(not set)'
+  if (!value) return '(não definido)'
   if (value.length <= 8) return '****'
   return value.slice(0, 4) + '****' + value.slice(-4)
 }
@@ -16,22 +16,22 @@ export default function SettingsPage() {
       <div className="flex items-center gap-3">
         <Settings className="size-6 text-muted-foreground" />
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Configurações</h1>
           <p className="text-muted-foreground">
-            Application configuration and environment
+            Configuração da aplicação e variáveis de ambiente
           </p>
         </div>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Environment Variables</CardTitle>
+          <CardTitle>Variáveis de ambiente</CardTitle>
           <CardDescription>
-            Configure these values in your{' '}
+            Configure esses valores no seu arquivo{' '}
             <code className="rounded bg-muted px-1 py-0.5 text-xs font-mono">
               .env.local
-            </code>{' '}
-            file. Restart the server after changes.
+            </code>
+            . Reinicie o servidor após alterações.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -41,10 +41,10 @@ export default function SettingsPage() {
                 <thead className="bg-muted/50">
                   <tr>
                     <th className="px-4 py-2 text-left font-medium text-muted-foreground">
-                      Variable
+                      Variável
                     </th>
                     <th className="px-4 py-2 text-left font-medium text-muted-foreground">
-                      Current Value
+                      Valor atual
                     </th>
                     <th className="px-4 py-2 text-left font-medium text-muted-foreground">
                       Status
@@ -92,12 +92,12 @@ export default function SettingsPage() {
                         {value ? (
                           <span className="inline-flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
                             <span className="size-1.5 rounded-full bg-green-600 dark:bg-green-400" />
-                            Set
+                            Definido
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 text-xs text-red-600 dark:text-red-400">
                             <span className="size-1.5 rounded-full bg-red-600 dark:bg-red-400" />
-                            Missing
+                            Ausente
                           </span>
                         )}
                       </td>
@@ -110,12 +110,10 @@ export default function SettingsPage() {
             <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-400">
               <Info className="size-4 mt-0.5 shrink-0" />
               <p>
-                Copy{' '}
-                <code className="font-mono text-xs">.env.local.example</code> to{' '}
-                <code className="font-mono text-xs">.env.local</code> and fill in
-                your values. Never commit{' '}
-                <code className="font-mono text-xs">.env.local</code> to version
-                control.
+                Copie{' '}
+                <code className="font-mono text-xs">.env.local.example</code> para{' '}
+                <code className="font-mono text-xs">.env.local</code> e preencha os valores. Nunca faça commit de{' '}
+                <code className="font-mono text-xs">.env.local</code> no controle de versão.
               </p>
             </div>
           </div>
@@ -125,9 +123,9 @@ export default function SettingsPage() {
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Supabase Project</CardTitle>
+            <CardTitle>Projeto Supabase</CardTitle>
             <CardDescription>
-              Manage your database, auth, and storage
+              Gerencie seu banco de dados, autenticação e armazenamento
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -139,13 +137,13 @@ export default function SettingsPage() {
                 className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
               >
                 <ExternalLink className="size-3.5" />
-                Open Supabase Dashboard
+                Abrir Supabase Dashboard
               </a>
             ) : (
               <p className="text-sm text-muted-foreground">
-                Set{' '}
+                Defina{' '}
                 <code className="font-mono text-xs">NEXT_PUBLIC_SUPABASE_URL</code>{' '}
-                to access your dashboard.
+                para acessar seu painel.
               </p>
             )}
           </CardContent>
@@ -154,7 +152,7 @@ export default function SettingsPage() {
         <Card>
           <CardHeader>
             <CardTitle>UAZAPI Base URL</CardTitle>
-            <CardDescription>The uazapiGO server endpoint</CardDescription>
+            <CardDescription>Endpoint do servidor uazapiGO</CardDescription>
           </CardHeader>
           <CardContent>
             {uazapiBaseUrl ? (
@@ -163,8 +161,8 @@ export default function SettingsPage() {
               </code>
             ) : (
               <p className="text-sm text-muted-foreground">
-                Set{' '}
-                <code className="font-mono text-xs">UAZAPI_BASE_URL</code> in{' '}
+                Defina{' '}
+                <code className="font-mono text-xs">UAZAPI_BASE_URL</code> em{' '}
                 <code className="font-mono text-xs">.env.local</code>.
               </p>
             )}

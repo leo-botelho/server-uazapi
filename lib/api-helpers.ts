@@ -50,7 +50,7 @@ export async function getInstanceClient(instanceId: string): Promise<{
 
   const { data: instance } = await supabase
     .from('instances')
-    .select('uazapi_token, server_id, servers(url, admin_token), client_id, clients(proxy_city, proxy_state)')
+    .select('uazapi_token, server_id, client_id, servers(url, admin_token)')
     .eq('id', instanceId)
     .single()
 
@@ -59,10 +59,22 @@ export async function getInstanceClient(instanceId: string): Promise<{
   const uazapiToken = instance.uazapi_token
   const server = Array.isArray(instance.servers) ? instance.servers[0] : instance.servers
 
-  // Proxy city from the linked client (null when no client or no city set)
-  const clientRow = Array.isArray(instance.clients) ? instance.clients[0] : instance.clients
-  const proxyCity = (clientRow as { proxy_city?: string | null } | null)?.proxy_city ?? null
-  const proxyState = (clientRow as { proxy_state?: string | null } | null)?.proxy_state ?? null
+  // Proxy city — separate fault-tolerant query so it never breaks the main flow.
+  // If migration 006 hasn't been applied yet, the columns won't exist and data
+  // will be null; we fall back to no proxy rather than crashing.
+  let proxyCity: string | null = null
+  let proxyState: string | null = null
+  if (instance.client_id) {
+    const { data: clientProxy } = await supabase
+      .from('clients')
+      .select('proxy_city, proxy_state')
+      .eq('id', instance.client_id)
+      .maybeSingle()
+    if (clientProxy) {
+      proxyCity = (clientProxy as Record<string, string | null>).proxy_city ?? null
+      proxyState = (clientProxy as Record<string, string | null>).proxy_state ?? null
+    }
+  }
 
   // 1. Instance has a dedicated server record → highest priority
   if (server?.url && server?.admin_token) {

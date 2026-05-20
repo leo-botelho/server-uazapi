@@ -88,9 +88,9 @@ export async function POST(
       ...proxyParams,
     })
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown uazapi error'
+    const message = err instanceof Error ? err.message : 'Erro desconhecido'
     console.error('[instances/[id]/connect POST] uazapi error:', message)
-    return NextResponse.json({ error: 'Failed to connect instance' }, { status: 502 })
+    return NextResponse.json({ error: message }, { status: 502 })
   }
 
   return NextResponse.json({

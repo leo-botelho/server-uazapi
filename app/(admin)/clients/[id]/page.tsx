@@ -36,54 +36,54 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
         <div>
           <h1 className="text-3xl font-bold tracking-tight">{client.name}</h1>
           <p className="text-muted-foreground">
-            Client ID: {client.id}
+            ID do cliente: {client.id}
           </p>
         </div>
         <Badge variant={client.active ? 'default' : 'secondary'}>
-          {client.active ? 'Active' : 'Inactive'}
+          {client.active ? 'Ativo' : 'Inativo'}
         </Badge>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Contact Information</CardTitle>
-            <CardDescription>Client contact details</CardDescription>
+            <CardTitle>Informações de contato</CardTitle>
+            <CardDescription>Dados de contato do cliente</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Email</span>
+              <span className="text-muted-foreground">E-mail</span>
               <span>{client.email ?? '-'}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Phones</span>
+              <span className="text-muted-foreground">Telefones</span>
               <span>{client.phones?.join(', ') ?? '-'}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Created</span>
-              <span>{new Date(client.created_at).toLocaleDateString()}</span>
+              <span className="text-muted-foreground">Criado em</span>
+              <span>{new Date(client.created_at).toLocaleDateString('pt-BR')}</span>
             </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>Statistics</CardTitle>
-            <CardDescription>Instance overview</CardDescription>
+            <CardTitle>Estatísticas</CardTitle>
+            <CardDescription>Visão geral das instâncias</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Total Instances</span>
+              <span className="text-muted-foreground">Total de instâncias</span>
               <span>{instances?.length ?? 0}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Connected</span>
+              <span className="text-muted-foreground">Conectadas</span>
               <span>
                 {instances?.filter((i) => i.status === 'connected').length ?? 0}
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Disconnected</span>
+              <span className="text-muted-foreground">Desconectadas</span>
               <span>
                 {instances?.filter((i) => i.status === 'disconnected').length ?? 0}
               </span>
@@ -110,7 +110,7 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
       </Card>
 
       <div>
-        <h2 className="text-xl font-semibold mb-4">Instances</h2>
+        <h2 className="text-xl font-semibold mb-4">Instâncias</h2>
         <InstanceTable instances={instances ?? []} />
       </div>
     </div>

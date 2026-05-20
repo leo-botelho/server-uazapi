@@ -92,7 +92,7 @@ export function PhoneForm() {
             {lookupResult.instanceName}
           </p>
           <p className="text-sm text-green-600 dark:text-green-500 mt-1">
-            Your WhatsApp is already connected.
+            Seu WhatsApp já está conectado.
           </p>
         </div>
         <ConnectionStatus
@@ -110,14 +110,14 @@ export function PhoneForm() {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <p className="text-sm font-medium text-muted-foreground">
-              Connecting: <span className="text-foreground">{lookupResult.instanceName}</span>
+              Conectando: <span className="text-foreground">{lookupResult.instanceName}</span>
             </p>
             <Button
               variant="ghost"
               size="sm"
               onClick={() => setConnectMethod(null)}
             >
-              Back
+              Voltar
             </Button>
           </div>
           <QrDisplay
@@ -133,14 +133,14 @@ export function PhoneForm() {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <p className="text-sm font-medium text-muted-foreground">
-              Connecting: <span className="text-foreground">{lookupResult.instanceName}</span>
+              Conectando: <span className="text-foreground">{lookupResult.instanceName}</span>
             </p>
             <Button
               variant="ghost"
               size="sm"
               onClick={() => setConnectMethod(null)}
             >
-              Back
+              Voltar
             </Button>
           </div>
           <PairingCodeDisplay
@@ -161,7 +161,7 @@ export function PhoneForm() {
             <p className="text-sm font-medium">{lookupResult.instanceName}</p>
           </div>
           <p className="text-xs text-muted-foreground mt-1">
-            Instance found. Choose how to connect:
+            Instância encontrada. Escolha como conectar:
           </p>
         </div>
 
@@ -178,7 +178,7 @@ export function PhoneForm() {
             <QrCode className="size-8 text-muted-foreground" />
             <span className="text-sm font-medium">QR Code</span>
             <span className="text-xs text-muted-foreground text-center">
-              Scan with WhatsApp camera
+              Escaneie com a câmera do WhatsApp
             </span>
           </button>
 
@@ -192,9 +192,9 @@ export function PhoneForm() {
             )}
           >
             <Hash className="size-8 text-muted-foreground" />
-            <span className="text-sm font-medium">Pairing Code</span>
+            <span className="text-sm font-medium">Código de pareamento</span>
             <span className="text-xs text-muted-foreground text-center">
-              Enter code on your phone
+              Digite o código no seu celular
             </span>
           </button>
         </div>
@@ -208,7 +208,7 @@ export function PhoneForm() {
             setNotFound(false)
           }}
         >
-          Search Again
+          Buscar novamente
         </Button>
       </div>
     )
@@ -218,7 +218,7 @@ export function PhoneForm() {
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       <div className="space-y-1.5">
-        <Label htmlFor="phone">Phone Number</Label>
+        <Label htmlFor="phone">Número de telefone</Label>
         <Input
           id="phone"
           type="tel"
@@ -243,7 +243,7 @@ export function PhoneForm() {
           className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
           role="alert"
         >
-          No instance found for this phone number. Please contact your administrator.
+          Nenhuma instância encontrada para este número. Entre em contato com seu administrador.
         </div>
       )}
 
@@ -251,10 +251,10 @@ export function PhoneForm() {
         {isSubmitting ? (
           <>
             <Loader2 className="size-4 animate-spin" />
-            Searching...
+            Buscando...
           </>
         ) : (
-          'Find My Instance'
+          'Encontrar minha instância'
         )}
       </Button>
     </form>

@@ -36,7 +36,7 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { label: 'Dashboard', href: '/dashboard', Icon: LayoutDashboard },
+  { label: 'Painel', href: '/dashboard', Icon: LayoutDashboard },
   { label: 'Instâncias', href: '/instances', Icon: Smartphone },
   { label: 'Clientes', href: '/clients', Icon: Users },
   { label: 'Servidores', href: '/servers', Icon: Server },
@@ -110,7 +110,7 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
             onClick={handleLogout}
           >
             <LogOut className="size-4" />
-            <span>Logout</span>
+            <span>Sair</span>
           </Button>
         </div>
       </SidebarFooter>

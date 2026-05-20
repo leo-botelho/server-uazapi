@@ -26,9 +26,9 @@ function StatusIcon({ status }: { status: ConnectionStatus }) {
 }
 
 function statusLabel(status: ConnectionStatus): string {
-  if (status === 'connected') return 'Connected'
-  if (status === 'connecting') return 'Connecting...'
-  return 'Disconnected'
+  if (status === 'connected') return 'Conectado'
+  if (status === 'connecting') return 'Conectando...'
+  return 'Desconectado'
 }
 
 function statusTextClass(status: ConnectionStatus): string {

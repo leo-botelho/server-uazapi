@@ -43,12 +43,12 @@ async function ClientsList() {
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Name</TableHead>
-          <TableHead>Email</TableHead>
-          <TableHead>Phones</TableHead>
-          <TableHead>Instances</TableHead>
-          <TableHead>Created</TableHead>
-          <TableHead className="text-right">Actions</TableHead>
+          <TableHead>Nome</TableHead>
+          <TableHead>E-mail</TableHead>
+          <TableHead>Telefones</TableHead>
+          <TableHead>Instâncias</TableHead>
+          <TableHead>Criado em</TableHead>
+          <TableHead className="text-right">Ações</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -58,7 +58,7 @@ async function ClientsList() {
             client.phones?.length > 0
               ? client.phones.slice(0, 2).join(', ') +
                 (client.phones.length > 2
-                  ? ` +${client.phones.length - 2} more`
+                  ? ` +${client.phones.length - 2} mais`
                   : '')
               : '—'
 
@@ -87,7 +87,7 @@ async function ClientsList() {
               <TableCell className="text-right">
                 <Button size="sm" variant="ghost" render={<Link href={`/clients/${client.id}`} />} className="gap-1">
                   <ExternalLink className="size-3" />
-                  View
+                  Ver
                 </Button>
               </TableCell>
             </TableRow>
@@ -99,7 +99,7 @@ async function ClientsList() {
               colSpan={6}
               className="py-8 text-center text-muted-foreground"
             >
-              No clients found. Create your first client to get started.
+              Nenhum cliente encontrado. Crie seu primeiro cliente para começar.
             </TableCell>
           </TableRow>
         )}
@@ -126,15 +126,15 @@ export default function ClientsPage() {
         <div className="flex items-center gap-3">
           <Users className="size-6 text-muted-foreground" />
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Clients</h1>
+            <h1 className="text-3xl font-bold tracking-tight">Clientes</h1>
             <p className="text-muted-foreground">
-              Manage your clients and their WhatsApp instances
+              Gerencie seus clientes e suas instâncias WhatsApp
             </p>
           </div>
         </div>
         <Button render={<Link href="/clients/new" />}>
           <Plus className="mr-2 size-4" />
-          New Client
+          Novo cliente
         </Button>
       </div>
 

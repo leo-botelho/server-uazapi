@@ -38,9 +38,9 @@ export default function InstancesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Instances</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Instâncias</h1>
           <p className="text-muted-foreground">
-            Manage your WhatsApp instances
+            Gerencie suas instâncias WhatsApp
           </p>
         </div>
         <div className="flex gap-2">

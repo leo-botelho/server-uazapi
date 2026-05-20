@@ -13,7 +13,8 @@ interface QrDisplayProps {
 }
 
 interface QrResponse {
-  qr: string
+  qrcode: string   // matches /api/connect/qr response field
+  status: string
   error?: string
 }
 
@@ -43,24 +44,34 @@ export function QrDisplay({ instanceId, uazapiToken }: QrDisplayProps) {
 
       if (!res.ok) {
         const body = (await res.json()) as { error?: string }
-        throw new Error(body.error ?? 'Failed to fetch QR code')
+        throw new Error(body.error ?? 'Erro ao gerar QR code')
       }
 
       const data = (await res.json()) as QrResponse
-      setQrBase64(data.qr)
+
+      if (data.status === 'connected') {
+        setDisplayState('connected')
+        return
+      }
+
+      if (!data.qrcode) {
+        throw new Error('Nenhum QR code retornado pela instância')
+      }
+
+      setQrBase64(data.qrcode)
       setDisplayState('qr')
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : 'Unknown error')
+      setErrorMessage(err instanceof Error ? err.message : 'Erro desconhecido')
       setDisplayState('error')
     }
   }, [instanceId, uazapiToken])
 
-  // Fetch QR on mount
+  // Busca o QR ao montar
   useEffect(() => {
     fetchQr()
   }, [fetchQr])
 
-  // Countdown timer
+  // Contador regressivo
   useEffect(() => {
     if (displayState !== 'qr') return
 
@@ -78,7 +89,7 @@ export function QrDisplay({ instanceId, uazapiToken }: QrDisplayProps) {
     return () => clearInterval(interval)
   }, [displayState])
 
-  // Poll connection status
+  // Polling de status
   useEffect(() => {
     if (displayState !== 'qr') return
 
@@ -95,7 +106,7 @@ export function QrDisplay({ instanceId, uazapiToken }: QrDisplayProps) {
           }
         }
       } catch {
-        // silently ignore poll errors
+        // ignora erros de polling silenciosamente
       }
     }, POLL_INTERVAL_MS)
 
@@ -112,7 +123,7 @@ export function QrDisplay({ instanceId, uazapiToken }: QrDisplayProps) {
     return (
       <div className="flex flex-col items-center gap-4 py-8">
         <Loader2 className="size-10 animate-spin text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">Generating QR code...</p>
+        <p className="text-sm text-muted-foreground">Gerando QR code…</p>
       </div>
     )
   }
@@ -122,7 +133,7 @@ export function QrDisplay({ instanceId, uazapiToken }: QrDisplayProps) {
       <div className="flex flex-col items-center gap-4 py-8">
         <CheckCircle className="size-12 text-green-600" />
         <p className="text-lg font-semibold text-green-700 dark:text-green-400">
-          WhatsApp connected successfully!
+          WhatsApp conectado com sucesso!
         </p>
       </div>
     )
@@ -131,10 +142,10 @@ export function QrDisplay({ instanceId, uazapiToken }: QrDisplayProps) {
   if (displayState === 'expired') {
     return (
       <div className="flex flex-col items-center gap-4 py-8">
-        <p className="text-muted-foreground text-sm">QR code expired.</p>
+        <p className="text-muted-foreground text-sm">QR code expirado.</p>
         <Button onClick={fetchQr} className="gap-2">
           <RefreshCw className="size-4" />
-          Generate New QR Code
+          Gerar novo QR code
         </Button>
       </div>
     )
@@ -143,10 +154,10 @@ export function QrDisplay({ instanceId, uazapiToken }: QrDisplayProps) {
   if (displayState === 'error') {
     return (
       <div className="flex flex-col items-center gap-4 py-8">
-        <p className="text-sm text-destructive">{errorMessage}</p>
+        <p className="text-sm text-destructive text-center max-w-sm">{errorMessage}</p>
         <Button onClick={fetchQr} variant="outline" className="gap-2">
           <RefreshCw className="size-4" />
-          Try Again
+          Tentar novamente
         </Button>
       </div>
     )
@@ -158,23 +169,23 @@ export function QrDisplay({ instanceId, uazapiToken }: QrDisplayProps) {
       {qrBase64 && (
         <img
           src={`data:image/png;base64,${qrBase64}`}
-          alt="WhatsApp QR Code"
+          alt="QR Code do WhatsApp"
           className="size-56 rounded-lg border border-border"
         />
       )}
       <p className="text-sm text-muted-foreground">
-        Expires in{' '}
+        Expira em{' '}
         <span className="font-mono font-semibold text-foreground">
           {formatSeconds(secondsLeft)}
         </span>
       </p>
       <p className="text-xs text-muted-foreground text-center max-w-xs">
-        Open WhatsApp on your phone, go to Settings &rarr; Linked Devices &rarr;
-        Link a Device, then scan this QR code.
+        Abra o WhatsApp no celular → Configurações → Aparelhos conectados →
+        Conectar aparelho → escaneie este QR code.
       </p>
       <Button onClick={fetchQr} variant="outline" size="sm" className="gap-2">
         <RefreshCw className="size-3.5" />
-        Refresh QR
+        Atualizar QR
       </Button>
     </div>
   )

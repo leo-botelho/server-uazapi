@@ -6,9 +6,9 @@ export default function ConnectPage() {
     <div className="flex min-h-screen items-center justify-center p-4 bg-muted/50">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Connect WhatsApp</CardTitle>
+          <CardTitle className="text-2xl">Conectar WhatsApp</CardTitle>
           <CardDescription>
-            Enter your phone number to find your WhatsApp instance and connect
+            Digite seu número de telefone para encontrar sua instância WhatsApp e conectar
           </CardDescription>
         </CardHeader>
         <CardContent>

@@ -14,7 +14,8 @@ interface PairingCodeDisplayProps {
 }
 
 interface PairingResponse {
-  code: string
+  pairingCode: string   // matches /api/connect/pair response field
+  status: string
   error?: string
 }
 
@@ -58,24 +59,34 @@ export function PairingCodeDisplay({ instanceId, uazapiToken, phone }: PairingCo
 
       if (!res.ok) {
         const body = (await res.json()) as { error?: string }
-        throw new Error(body.error ?? 'Failed to get pairing code')
+        throw new Error(body.error ?? 'Erro ao obter código de emparelhamento')
       }
 
       const data = (await res.json()) as PairingResponse
-      setPairingCode(data.code)
+
+      if (data.status === 'connected') {
+        setDisplayState('connected')
+        return
+      }
+
+      if (!data.pairingCode) {
+        throw new Error('Nenhum código retornado pela instância')
+      }
+
+      setPairingCode(data.pairingCode)
       setDisplayState('code')
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : 'Unknown error')
+      setErrorMessage(err instanceof Error ? err.message : 'Erro desconhecido')
       setDisplayState('error')
     }
   }, [instanceId, uazapiToken, phone])
 
-  // Fetch on mount
+  // Busca ao montar
   useEffect(() => {
     fetchPairingCode()
   }, [fetchPairingCode])
 
-  // Countdown
+  // Contador
   useEffect(() => {
     if (displayState !== 'code') return
 
@@ -93,7 +104,7 @@ export function PairingCodeDisplay({ instanceId, uazapiToken, phone }: PairingCo
     return () => clearInterval(interval)
   }, [displayState])
 
-  // Poll status
+  // Polling de status
   useEffect(() => {
     if (displayState !== 'code') return
 
@@ -110,7 +121,7 @@ export function PairingCodeDisplay({ instanceId, uazapiToken, phone }: PairingCo
           }
         }
       } catch {
-        // silently ignore
+        // ignora silenciosamente
       }
     }, POLL_INTERVAL_MS)
 
@@ -121,7 +132,7 @@ export function PairingCodeDisplay({ instanceId, uazapiToken, phone }: PairingCo
     return (
       <div className="flex flex-col items-center gap-4 py-8">
         <Loader2 className="size-10 animate-spin text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">Generating pairing code...</p>
+        <p className="text-sm text-muted-foreground">Gerando código de emparelhamento…</p>
       </div>
     )
   }
@@ -131,7 +142,7 @@ export function PairingCodeDisplay({ instanceId, uazapiToken, phone }: PairingCo
       <div className="flex flex-col items-center gap-4 py-8">
         <CheckCircle className="size-12 text-green-600" />
         <p className="text-lg font-semibold text-green-700 dark:text-green-400">
-          WhatsApp connected successfully!
+          WhatsApp conectado com sucesso!
         </p>
       </div>
     )
@@ -140,10 +151,10 @@ export function PairingCodeDisplay({ instanceId, uazapiToken, phone }: PairingCo
   if (displayState === 'expired') {
     return (
       <div className="flex flex-col items-center gap-4 py-8">
-        <p className="text-muted-foreground text-sm">Pairing code expired.</p>
+        <p className="text-muted-foreground text-sm">Código expirado.</p>
         <Button onClick={fetchPairingCode} className="gap-2">
           <RefreshCw className="size-4" />
-          Get New Pairing Code
+          Obter novo código
         </Button>
       </div>
     )
@@ -152,10 +163,10 @@ export function PairingCodeDisplay({ instanceId, uazapiToken, phone }: PairingCo
   if (displayState === 'error') {
     return (
       <div className="flex flex-col items-center gap-4 py-8">
-        <p className="text-sm text-destructive">{errorMessage}</p>
+        <p className="text-sm text-destructive text-center max-w-sm">{errorMessage}</p>
         <Button onClick={fetchPairingCode} variant="outline" className="gap-2">
           <RefreshCw className="size-4" />
-          Try Again
+          Tentar novamente
         </Button>
       </div>
     )
@@ -173,26 +184,26 @@ export function PairingCodeDisplay({ instanceId, uazapiToken, phone }: PairingCo
       )}
 
       <p className="text-sm text-muted-foreground">
-        Expires in{' '}
+        Expira em{' '}
         <span className="font-mono font-semibold text-foreground">
           {formatSeconds(secondsLeft)}
         </span>
       </p>
 
       <div className="rounded-lg border border-border bg-muted/50 p-4 text-sm text-muted-foreground space-y-1 max-w-sm">
-        <p className="font-semibold text-foreground">How to connect:</p>
+        <p className="font-semibold text-foreground">Como conectar:</p>
         <ol className="list-decimal list-inside space-y-1">
-          <li>Open WhatsApp on your phone</li>
-          <li>Go to Settings</li>
-          <li>Tap Linked Devices</li>
-          <li>Tap Link with phone number</li>
-          <li>Enter the code above</li>
+          <li>Abra o WhatsApp no celular</li>
+          <li>Vá em Configurações</li>
+          <li>Toque em Aparelhos Conectados</li>
+          <li>Toque em Conectar com número de telefone</li>
+          <li>Digite o código acima</li>
         </ol>
       </div>
 
       <Button onClick={fetchPairingCode} variant="outline" size="sm" className="gap-2">
         <RefreshCw className="size-3.5" />
-        Refresh Code
+        Atualizar código
       </Button>
     </div>
   )

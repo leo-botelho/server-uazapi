@@ -38,24 +38,24 @@ async function DashboardStats() {
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
       <StatsCard
-        title="Total Instances"
+        title="Total de instâncias"
         value={totalInstances ?? 0}
         icon={Smartphone}
       />
       <StatsCard
-        title="Connected"
+        title="Conectadas"
         value={connectedInstances ?? 0}
         icon={CheckCircle}
         variant="success"
       />
       <StatsCard
-        title="Disconnected"
+        title="Desconectadas"
         value={disconnectedInstances ?? 0}
         icon={XCircle}
         variant="destructive"
       />
       <StatsCard
-        title="Total Clients"
+        title="Total de clientes"
         value={totalClients ?? 0}
         icon={AlertTriangle}
       />
@@ -104,9 +104,9 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Painel</h1>
         <p className="text-muted-foreground">
-          Overview of your WhatsApp instances
+          Visão geral das suas instâncias WhatsApp
         </p>
       </div>
 
@@ -115,7 +115,7 @@ export default function DashboardPage() {
       </Suspense>
 
       <div>
-        <h2 className="text-xl font-semibold mb-4">Recent Instances</h2>
+        <h2 className="text-xl font-semibold mb-4">Instâncias recentes</h2>
         <Suspense fallback={<TableLoading />}>
           <RecentInstances />
         </Suspense>

@@ -60,7 +60,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     return NextResponse.json({ pairingCode: result.pairingCode, status: result.status })
   } catch (err) {
-    console.error('[connect/pair] uazapi error:', (err as Error).message)
-    return NextResponse.json({ error: 'Failed to request pairing code' }, { status: 502 })
+    const msg = err instanceof Error ? err.message : 'Erro desconhecido'
+    console.error('[connect/pair] uazapi error:', msg)
+    return NextResponse.json({ error: msg }, { status: 502 })
   }
 }

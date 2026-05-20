@@ -52,10 +52,10 @@ async function EventLogsList({ page }: EventLogsListProps) {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Event Type</TableHead>
-            <TableHead>Instance</TableHead>
-            <TableHead>Received</TableHead>
-            <TableHead>Payload Preview</TableHead>
+            <TableHead>Tipo de evento</TableHead>
+            <TableHead>Instância</TableHead>
+            <TableHead>Recebido</TableHead>
+            <TableHead>Prévia do payload</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -87,7 +87,7 @@ async function EventLogsList({ page }: EventLogsListProps) {
                 colSpan={4}
                 className="py-8 text-center text-muted-foreground"
               >
-                No webhook events logged yet.
+                Nenhum evento de webhook registrado ainda.
               </TableCell>
             </TableRow>
           )}
@@ -96,7 +96,7 @@ async function EventLogsList({ page }: EventLogsListProps) {
 
       {totalPages > 1 && (
         <p className="text-xs text-muted-foreground text-right">
-          Page {page + 1} of {totalPages} &bull; {count} total events
+          Página {page + 1} de {totalPages} &bull; {count} eventos no total
         </p>
       )}
     </div>
@@ -127,9 +127,9 @@ export default async function LogsPage({ searchParams }: LogsPageProps) {
       <div className="flex items-center gap-3">
         <ScrollText className="size-6 text-muted-foreground" />
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Webhook Event Logs</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Logs de eventos webhook</h1>
           <p className="text-muted-foreground">
-            Incoming webhook events from uazapiGO — {PAGE_SIZE} per page
+            Eventos de webhook recebidos do uazapiGO — {PAGE_SIZE} por página
           </p>
         </div>
       </div>

@@ -48,12 +48,12 @@ function ConnectButton({ instanceId }: { instanceId: string }) {
       })
       if (!res.ok) {
         const body = (await res.json()) as { error?: string }
-        throw new Error(body.error ?? 'Failed to connect')
+        throw new Error(body.error ?? 'Falha ao conectar')
       }
-      toast.success('Instance connection initiated')
+      toast.success('Conexão da instância iniciada')
       startTransition(() => router.refresh())
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to connect')
+      toast.error(err instanceof Error ? err.message : 'Falha ao conectar')
     }
   }
 
@@ -66,7 +66,7 @@ function ConnectButton({ instanceId }: { instanceId: string }) {
       className="gap-1"
     >
       <Power className="size-3" />
-      {isPending ? 'Connecting...' : 'Connect'}
+      {isPending ? 'Conectando...' : 'Conectar'}
     </Button>
   )
 }
@@ -82,12 +82,12 @@ function DisconnectButton({ instanceId }: { instanceId: string }) {
       })
       if (!res.ok) {
         const body = (await res.json()) as { error?: string }
-        throw new Error(body.error ?? 'Failed to disconnect')
+        throw new Error(body.error ?? 'Falha ao desconectar')
       }
-      toast.success('Instance disconnected')
+      toast.success('Instância desconectada')
       startTransition(() => router.refresh())
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to disconnect')
+      toast.error(err instanceof Error ? err.message : 'Falha ao desconectar')
     }
   }
 
@@ -100,7 +100,7 @@ function DisconnectButton({ instanceId }: { instanceId: string }) {
       className="gap-1"
     >
       <PowerOff className="size-3" />
-      {isPending ? 'Disconnecting...' : 'Disconnect'}
+      {isPending ? 'Desconectando...' : 'Desconectar'}
     </Button>
   )
 }
@@ -109,7 +109,7 @@ export function InstanceTable({ instances }: InstanceTableProps) {
   if (instances.length === 0) {
     return (
       <div className="rounded-xl border border-border bg-card py-12 text-center text-muted-foreground">
-        No instances found.
+        Nenhuma instância encontrada.
       </div>
     )
   }
@@ -119,11 +119,11 @@ export function InstanceTable({ instances }: InstanceTableProps) {
       <TableHeader>
         <TableRow>
           <TableHead>Status</TableHead>
-          <TableHead>Instance Name</TableHead>
-          <TableHead>Phone</TableHead>
-          <TableHead>Client</TableHead>
-          <TableHead>Last Disconnected</TableHead>
-          <TableHead className="text-right">Actions</TableHead>
+          <TableHead>Nome da instância</TableHead>
+          <TableHead>Telefone</TableHead>
+          <TableHead>Cliente</TableHead>
+          <TableHead>Última desconexão</TableHead>
+          <TableHead className="text-right">Ações</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -157,7 +157,7 @@ export function InstanceTable({ instances }: InstanceTableProps) {
               <div className="flex items-center justify-end gap-2">
                 <Button size="sm" variant="ghost" render={<Link href={`/instances/${instance.id}`} />} className="gap-1">
                   <ExternalLink className="size-3" />
-                  View
+                  Ver
                 </Button>
 
                 {instance.status === 'disconnected' ? (
