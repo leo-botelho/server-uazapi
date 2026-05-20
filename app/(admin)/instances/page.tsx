@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { InstanceTable } from '@/components/admin/instance-table'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { SyncInstancesButton } from './sync-button'
 import { Plus } from 'lucide-react'
 
 async function InstancesList() {
@@ -42,10 +43,13 @@ export default function InstancesPage() {
             Manage your WhatsApp instances
           </p>
         </div>
-        <Button render={<Link href="/instances/new" />}>
-          <Plus className="mr-2 h-4 w-4" />
-          New Instance
-        </Button>
+        <div className="flex gap-2">
+          <SyncInstancesButton />
+          <Button render={<Link href="/instances/new" />}>
+            <Plus className="mr-2 h-4 w-4" />
+            Nova instância
+          </Button>
+        </div>
       </div>
 
       <Suspense fallback={<TableLoading />}>
