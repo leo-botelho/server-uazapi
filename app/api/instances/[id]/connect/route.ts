@@ -69,12 +69,24 @@ export async function POST(
     return NextResponse.json({ error: 'Instance not found' }, { status: 404 })
   }
 
-  const { client, uazapiToken } = resolved
+  const { client, uazapiToken, proxyCity, proxyState } = resolved
+
+  // Build connect payload with optional managed proxy from the client's city
+  const proxyParams = proxyCity
+    ? {
+        proxy_managed_country: 'br' as const,
+        ...(proxyState ? { proxy_managed_state: proxyState } : {}),
+        proxy_managed_city: proxyCity,
+      }
+    : {}
 
   let connectResult: Awaited<ReturnType<typeof client.connect>>
 
   try {
-    connectResult = await client.connect(uazapiToken, phone ? { phone } : {})
+    connectResult = await client.connect(uazapiToken, {
+      ...(phone ? { phone } : {}),
+      ...proxyParams,
+    })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown uazapi error'
     console.error('[instances/[id]/connect POST] uazapi error:', message)

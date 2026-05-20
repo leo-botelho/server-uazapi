@@ -76,6 +76,8 @@ export type Database = {
           name: string
           email: string | null
           phones: string[]
+          proxy_city: string | null
+          proxy_state: string | null
           active: boolean
           created_at: string
           updated_at: string
@@ -85,6 +87,8 @@ export type Database = {
           name: string
           email?: string | null
           phones?: string[]
+          proxy_city?: string | null
+          proxy_state?: string | null
           active?: boolean
           created_at?: string
           updated_at?: string
@@ -94,6 +98,8 @@ export type Database = {
           name?: string
           email?: string | null
           phones?: string[]
+          proxy_city?: string | null
+          proxy_state?: string | null
           active?: boolean
           created_at?: string
           updated_at?: string

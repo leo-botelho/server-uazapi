@@ -97,9 +97,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
   }
 
+  const proxyCity =
+    typeof raw['proxy_city'] === 'string' && raw['proxy_city'].trim() !== ''
+      ? raw['proxy_city'].trim()
+      : null
+  const proxyState =
+    typeof raw['proxy_state'] === 'string' && raw['proxy_state'].trim() !== ''
+      ? raw['proxy_state'].trim()
+      : null
+
   const { data: client, error: insertError } = await supabase
     .from('clients')
-    .insert({ name, email, phones })
+    .insert({ name, email, phones, proxy_city: proxyCity, proxy_state: proxyState })
     .select()
     .single()
 

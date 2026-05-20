@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { InstanceTable } from '@/components/admin/instance-table'
+import { ClientProxyForm } from '@/components/admin/client-proxy-form'
 
 interface ClientDetailPageProps {
   params: Promise<{ id: string }>
@@ -90,6 +91,23 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
           </CardContent>
         </Card>
       </div>
+
+      {/* Proxy de conexão */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Proxy de Conexão</CardTitle>
+          <CardDescription>
+            Cidade usada para o proxy gerenciado do uazapiGO — aplicado automaticamente em toda reconexão
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ClientProxyForm
+            clientId={client.id}
+            initialCity={client.proxy_city ?? null}
+            initialState={client.proxy_state ?? null}
+          />
+        </CardContent>
+      </Card>
 
       <div>
         <h2 className="text-xl font-semibold mb-4">Instances</h2>

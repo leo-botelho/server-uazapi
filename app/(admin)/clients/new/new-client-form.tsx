@@ -7,6 +7,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Loader2, Plus, X } from 'lucide-react'
 import { toast } from 'sonner'
+import { ProxyCitySelect } from '@/components/client/proxy-city-select'
+import type { ProxyCity } from '@/lib/uazapi/types'
 
 export function NewClientForm() {
   const router = useRouter()
@@ -15,6 +17,7 @@ export function NewClientForm() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [phones, setPhones] = useState<string[]>([''])
+  const [proxyCity, setProxyCity] = useState<ProxyCity | null>(null)
 
   function addPhone() {
     setPhones((prev) => [...prev, ''])
@@ -41,6 +44,8 @@ export function NewClientForm() {
           name: name.trim(),
           email: email.trim() || undefined,
           phones: validPhones,
+          proxy_city: proxyCity?.value ?? null,
+          proxy_state: proxyCity?.state ?? null,
         }),
       })
 
@@ -129,6 +134,9 @@ export function NewClientForm() {
           Formato com DDI: 5511999999999 (sem + ou espaços)
         </p>
       </div>
+
+      {/* Proxy city */}
+      <ProxyCitySelect onSelect={setProxyCity} />
 
       <div className="flex gap-3 pt-2">
         <Button type="submit" disabled={isPending || !name.trim()}>

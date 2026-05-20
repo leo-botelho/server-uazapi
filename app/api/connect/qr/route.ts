@@ -26,15 +26,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const resolved = await getInstanceClient(instanceId)
   if (!resolved) return NextResponse.json({ error: 'Instance not found' }, { status: 404 })
 
-  const { client, uazapiToken } = resolved
+  const { client, uazapiToken, proxyCity, proxyState } = resolved
 
-  // Build connect payload — QR mode (no phone)
+  // Build connect payload — QR mode (no phone).
+  // Proxy is always taken from the client's configured city in the DB;
+  // body proxy params are ignored to prevent tampering.
   const payload: ConnectRequest = {}
   if (typeof raw['browser'] === 'string') payload.browser = raw['browser'] as BrowserType
   if (typeof raw['systemName'] === 'string') payload.systemName = raw['systemName']
-  if (typeof raw['proxy_managed_country'] === 'string') payload.proxy_managed_country = raw['proxy_managed_country']
-  if (typeof raw['proxy_managed_state'] === 'string') payload.proxy_managed_state = raw['proxy_managed_state']
-  if (typeof raw['proxy_managed_city'] === 'string') payload.proxy_managed_city = raw['proxy_managed_city']
+  if (proxyCity) {
+    payload.proxy_managed_country = 'br'
+    if (proxyState) payload.proxy_managed_state = proxyState
+    payload.proxy_managed_city = proxyCity
+  }
 
   try {
     const result = await client.connect(uazapiToken, payload)

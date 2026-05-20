@@ -119,6 +119,21 @@ export async function PATCH(
     update.phones = phones
   }
 
+  // proxy_city and proxy_state — null clears them
+  if ('proxy_city' in raw) {
+    update.proxy_city =
+      typeof raw['proxy_city'] === 'string' && raw['proxy_city'].trim() !== ''
+        ? raw['proxy_city'].trim()
+        : null
+  }
+
+  if ('proxy_state' in raw) {
+    update.proxy_state =
+      typeof raw['proxy_state'] === 'string' && raw['proxy_state'].trim() !== ''
+        ? raw['proxy_state'].trim()
+        : null
+  }
+
   if (Object.keys(update).length === 0) {
     return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 })
   }
