@@ -21,7 +21,27 @@ export async function GET(): Promise<NextResponse> {
   }
 
   if (!profile) {
-    return NextResponse.json(null)
+    // Profile doesn't exist yet (user created before the trigger was added).
+    // Auto-create a default row so the Profile page works immediately.
+    const { data: created, error: createError } = await serviceClient
+      .from('admin_profiles')
+      .insert({ id: user.id })
+      .select('id, full_name, uazapi_server_url, uazapi_admin_token, created_at')
+      .single()
+
+    if (createError) {
+      // Possible race condition (concurrent request already created it) — ignore
+      console.warn('[profile GET] Could not auto-create profile:', createError.message)
+      return NextResponse.json(null)
+    }
+
+    return NextResponse.json({
+      id: created.id,
+      full_name: created.full_name,
+      uazapi_server_url: created.uazapi_server_url,
+      uazapi_admin_token_set: false,
+      created_at: created.created_at,
+    })
   }
 
   return NextResponse.json({
