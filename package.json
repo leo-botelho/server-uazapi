@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "build:pages": "next build && opennextjs-cloudflare build",
+    "build:pages": "next build && opennextjs-cloudflare build && node scripts/copy-worker.js",
     "preview": "npm run build:pages && wrangler pages dev",
     "start": "next start",
     "lint": "eslint",
