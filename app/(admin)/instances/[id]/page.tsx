@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { InstanceStatusBadge } from '@/components/admin/instance-status-badge'
 import { InstanceConnectActions } from './connect-actions'
+import { LinkClientForm } from './link-client-form'
 import { formatDistanceToNow } from 'date-fns'
 import { ArrowLeft } from 'lucide-react'
 import type { Json } from '@/types/database'
@@ -54,6 +55,12 @@ export default async function InstanceDetailPage({
     .eq('instance_id', id)
     .order('received_at', { ascending: false })
     .limit(10)
+
+  const { data: allClients } = await supabase
+    .from('clients')
+    .select('id, name, email')
+    .eq('active', true)
+    .order('name', { ascending: true })
 
   const alertChannelLabels: Record<string, string> = {
     email: 'Email',
@@ -145,15 +152,22 @@ export default async function InstanceDetailPage({
             </Card>
 
             <Card>
-              <CardHeader>
-                <CardTitle>Client Information</CardTitle>
-                <CardDescription>Associated client details</CardDescription>
+              <CardHeader className="flex flex-row items-start justify-between gap-4">
+                <div>
+                  <CardTitle>Cliente</CardTitle>
+                  <CardDescription>Cliente vinculado a esta instância</CardDescription>
+                </div>
+                <LinkClientForm
+                  instanceId={instance.id}
+                  currentClientId={instance.client_id}
+                  clients={allClients ?? []}
+                />
               </CardHeader>
               <CardContent className="space-y-3">
                 {instance.client ? (
                   <>
                     <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Name</span>
+                      <span className="text-sm text-muted-foreground">Nome</span>
                       <Link
                         href={`/clients/${instance.client.id}`}
                         className="text-sm font-medium hover:underline"
@@ -168,7 +182,7 @@ export default async function InstanceDetailPage({
                       </span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Phones</span>
+                      <span className="text-sm text-muted-foreground">Telefones</span>
                       <span className="text-sm">
                         {instance.client.phones?.join(', ') ?? '—'}
                       </span>
@@ -176,7 +190,7 @@ export default async function InstanceDetailPage({
                   </>
                 ) : (
                   <p className="text-sm text-muted-foreground">
-                    No client assigned to this instance.
+                    Nenhum cliente vinculado. Clique em "Vincular cliente" para associar.
                   </p>
                 )}
               </CardContent>
