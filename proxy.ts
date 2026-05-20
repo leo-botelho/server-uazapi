@@ -12,7 +12,7 @@ const ADMIN_ROUTES = [
   '/profile',
 ]
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { user, supabaseResponse } = await updateSession(request)
 
   const isAdminRoute = ADMIN_ROUTES.some((route) =>
