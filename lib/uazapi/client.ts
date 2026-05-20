@@ -39,7 +39,7 @@ function createUazapiClient(baseUrl: string, defaultAdminToken: string) {
   return {
     // Admin endpoints
     createInstance: (name: string) =>
-      request<UazapiInstance>('/instance/init', {
+      request<UazapiInstance>('/instance/create', {
         method: 'POST',
         body: JSON.stringify({ name }),
       }),
