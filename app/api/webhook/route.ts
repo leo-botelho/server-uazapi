@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
+import { getInstanceClient } from '@/lib/api-helpers'
 import type { WebhookConnectionEvent } from '@/lib/uazapi/types'
 import type { Json } from '@/types/database'
+import { randomBytes } from 'crypto'
 
 // Public endpoint — no auth, no middleware cookie handling.
 // uazapiGO must be able to reach this without credentials.
@@ -15,7 +17,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  // Basic shape validation before touching the DB
   if (
     typeof body !== 'object' ||
     body === null ||
@@ -29,7 +30,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const event = body as WebhookConnectionEvent
 
   if (event.event !== 'connection') {
-    // We only handle connection events right now — acknowledge and move on
     return NextResponse.json({ received: true })
   }
 
@@ -41,34 +41,30 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // 1. Find instance by uazapi_token
   const { data: instance, error: findError } = await supabase
     .from('instances')
-    .select('id, alert_channel, alert_config, status')
+    .select('id, name, status, alert_channel, alert_config, silence_start, silence_end, client_id')
     .eq('uazapi_token', uazapiToken)
     .eq('active', true)
     .maybeSingle()
 
   if (findError) {
     console.error('[webhook] DB lookup error:', findError.message)
-    // Still return 200 so uazapiGO does not keep retrying forever
     return NextResponse.json({ received: true })
   }
 
-  // 2. Log the raw event regardless of whether we found the instance
-  const { error: logError } = await supabase.from('webhook_events').insert({
+  // 2. Log the raw event
+  await supabase.from('webhook_events').insert({
     instance_id: instance?.id ?? null,
     event_type: event.event,
     payload: body as Json,
+  }).then(({ error }) => {
+    if (error) console.error('[webhook] Failed to log event:', error.message)
   })
 
-  if (logError) {
-    console.error('[webhook] Failed to log event:', logError.message)
-  }
-
   if (!instance) {
-    // Unknown instance — still return 200
     return NextResponse.json({ received: true })
   }
 
-  // 3. Build status update
+  // 3. Update instance status
   const updatePayload: {
     status: typeof status
     phone_connected?: string | null
@@ -82,22 +78,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     updatePayload.last_disconnected_at = new Date().toISOString()
   }
 
-  const { error: updateError } = await supabase
+  await supabase
     .from('instances')
     .update(updatePayload)
     .eq('id', instance.id)
+    .then(({ error }) => {
+      if (error) console.error('[webhook] Failed to update instance status:', error.message)
+    })
 
-  if (updateError) {
-    console.error('[webhook] Failed to update instance status:', updateError.message)
-  }
-
-  // 4. Trigger notification if instance just disconnected
+  // 4. Trigger notification if just disconnected
   if (status === 'disconnected' && instance.status !== 'disconnected') {
-    await triggerDisconnectNotification(supabase, instance.id, {
-      alertChannel: instance.alert_channel,
-      alertConfig: instance.alert_config,
-      reason: reason ?? null,
-    }).catch((err: unknown) => {
+    sendDisconnectNotification(supabase, instance).catch((err: unknown) => {
       console.error('[webhook] Notification error:', err instanceof Error ? err.message : String(err))
     })
   }
@@ -106,52 +97,152 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Internal notification dispatcher
+// Notification dispatcher — runs fire-and-forget after the 200 response
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface NotificationContext {
-  alertChannel: string
-  alertConfig: unknown
-  reason: string | null
+type InstanceRow = {
+  id: string
+  name: string
+  alert_channel: string
+  alert_config: unknown
+  silence_start: number | null
+  silence_end: number | null
+  client_id: string | null
 }
 
-async function triggerDisconnectNotification(
+async function sendDisconnectNotification(
   supabase: Awaited<ReturnType<typeof createServiceClient>>,
-  instanceId: string,
-  ctx: NotificationContext
+  instance: InstanceRow
 ): Promise<void> {
-  const edgeFunctionUrl = process.env.SUPABASE_EDGE_FUNCTION_NOTIFY_URL
+  const channel = instance.alert_channel ?? 'none'
+  if (channel === 'none' || channel === 'email') return  // email not implemented yet
 
-  if (edgeFunctionUrl) {
-    // Prefer calling the Supabase Edge Function when configured
-    const res = await fetch(edgeFunctionUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
-      },
-      body: JSON.stringify({
-        instanceId,
-        alertChannel: ctx.alertChannel,
-        alertConfig: ctx.alertConfig,
-        reason: ctx.reason,
-      }),
-    })
+  // Check silence window (UTC hours)
+  const currentHour = new Date().getUTCHours()
+  const silenceStart = instance.silence_start ?? 23
+  const silenceEnd = instance.silence_end ?? 7
 
-    if (!res.ok) {
-      const text = await res.text()
-      throw new Error(`Edge function responded ${res.status}: ${text}`)
-    }
-
+  if (isInSilenceWindow(currentHour, silenceStart, silenceEnd)) {
+    console.log(`[notify] Silence window active (${silenceStart}h–${silenceEnd}h UTC), skipping`)
     return
   }
 
-  // Fallback: record a pending notification in the log so a background job
-  // or the admin dashboard can pick it up later.
-  await supabase.from('notifications_log').insert({
-    instance_id: instanceId,
-    channel: ctx.alertChannel,
-    recipient: null,
-    status: 'pending',
+  // Fetch client name for the message
+  let clientName = 'Cliente'
+  if (instance.client_id) {
+    const { data: client } = await supabase
+      .from('clients')
+      .select('name')
+      .eq('id', instance.client_id)
+      .maybeSingle()
+    if (client?.name) clientName = client.name
+  }
+
+  // Generate a reconnect token valid for 24h
+  const token = randomBytes(32).toString('hex')
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+
+  await supabase.from('reconnect_tokens').insert({
+    instance_id: instance.id,
+    token,
+    expires_at: expiresAt,
   })
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const reconnectUrl = `${appUrl}/connect/${token}`
+
+  const message =
+    `⚠️ *Instância desconectada*\n\n` +
+    `Olá ${clientName},\n\n` +
+    `A instância *${instance.name}* foi desconectada do WhatsApp.\n\n` +
+    `Para reconectar, acesse o link abaixo:\n${reconnectUrl}\n\n` +
+    `_Link válido por 24 horas._`
+
+  let notifStatus: 'sent' | 'failed' = 'failed'
+  let notifError: string | null = null
+
+  try {
+    if (channel === 'whatsapp') {
+      await sendWhatsAppNotification(instance, message)
+      notifStatus = 'sent'
+    } else if (channel === 'n8n') {
+      await sendN8nNotification(instance, {
+        event: 'disconnected',
+        instanceId: instance.id,
+        instanceName: instance.name,
+        clientName,
+        reconnectUrl,
+      })
+      notifStatus = 'sent'
+    }
+  } catch (err) {
+    notifError = err instanceof Error ? err.message : String(err)
+    console.error(`[notify] ${channel} send failed:`, notifError)
+  }
+
+  // Log the notification attempt
+  await supabase.from('notifications_log').insert({
+    instance_id: instance.id,
+    channel,
+    status: notifStatus,
+    error: notifError,
+    sent_at: notifStatus === 'sent' ? new Date().toISOString() : null,
+  })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Channel helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function sendWhatsAppNotification(
+  instance: InstanceRow,
+  message: string
+): Promise<void> {
+  const config = (instance.alert_config ?? {}) as Record<string, unknown>
+  const to = typeof config['to'] === 'string' ? config['to'] : null
+  const fromInstanceId = typeof config['from_instance_id'] === 'string'
+    ? config['from_instance_id']
+    : null
+
+  if (!to) throw new Error('alert_config.to is not configured for WhatsApp channel')
+  if (!fromInstanceId) throw new Error('alert_config.from_instance_id is not configured for WhatsApp channel')
+
+  const clientResult = await getInstanceClient(fromInstanceId)
+  if (!clientResult) throw new Error(`Sender instance ${fromInstanceId} not found`)
+
+  const { client, uazapiToken } = clientResult
+  await client.sendText(uazapiToken, to, message)
+}
+
+async function sendN8nNotification(
+  instance: InstanceRow,
+  payload: Record<string, unknown>
+): Promise<void> {
+  const config = (instance.alert_config ?? {}) as Record<string, unknown>
+  const url = typeof config['url'] === 'string' ? config['url'] : null
+
+  if (!url) throw new Error('alert_config.url is not configured for n8n channel')
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`n8n responded ${res.status}: ${text}`)
+  }
+}
+
+// Returns true if the current hour is inside the silence window.
+// Handles windows that wrap midnight (e.g., 23h–7h).
+function isInSilenceWindow(hour: number, start: number, end: number): boolean {
+  if (start === end) return false
+  if (start > end) {
+    // Wraps midnight: e.g. 23h–7h → silent from 23 to 23:59 AND 0 to 6
+    return hour >= start || hour < end
+  }
+  // Same-day window: e.g. 13h–15h
+  return hour >= start && hour < end
 }

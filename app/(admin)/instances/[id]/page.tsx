@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { InstanceStatusBadge } from '@/components/admin/instance-status-badge'
 import { InstanceConnectActions } from './connect-actions'
 import { LinkClientForm } from './link-client-form'
+import { AlertConfigForm } from './alert-config-form'
 import { formatDistanceToNow } from 'date-fns'
 import { ArrowLeft } from 'lucide-react'
 import type { Json } from '@/types/database'
@@ -62,12 +63,13 @@ export default async function InstanceDetailPage({
     .eq('active', true)
     .order('name', { ascending: true })
 
-  const alertChannelLabels: Record<string, string> = {
-    email: 'Email',
-    whatsapp: 'WhatsApp',
-    n8n: 'n8n Webhook',
-    none: 'None',
-  }
+  // Sender instances for WhatsApp alert (all connected instances except this one)
+  const { data: senderInstances } = await supabase
+    .from('instances')
+    .select('id, name, phone_connected')
+    .eq('active', true)
+    .neq('id', id)
+    .order('name', { ascending: true })
 
   return (
     <div className="space-y-6">
@@ -222,46 +224,22 @@ export default async function InstanceDetailPage({
         <TabsContent value="alerts">
           <Card>
             <CardHeader>
-              <CardTitle>Alert Configuration</CardTitle>
+              <CardTitle>Alertas de desconexão</CardTitle>
               <CardDescription>
-                Current alert settings for disconnect notifications
+                Configure como e quando notificar quando esta instância desconectar
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">
-                    Alert Channel
-                  </span>
-                  <Badge variant="outline">
-                    {alertChannelLabels[instance.alert_channel] ??
-                      instance.alert_channel}
-                  </Badge>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">
-                    Silence Window
-                  </span>
-                  <span className="text-sm font-medium">
-                    {instance.silence_start}h &ndash; {instance.silence_end}h
-                  </span>
-                </div>
-                {instance.alert_config &&
-                  typeof instance.alert_config === 'object' &&
-                  !Array.isArray(instance.alert_config) && (
-                    <div className="space-y-1">
-                      <span className="text-sm text-muted-foreground">
-                        Alert Config
-                      </span>
-                      <pre className="rounded-lg bg-muted p-3 text-xs font-mono overflow-x-auto">
-                        {JSON.stringify(instance.alert_config, null, 2)}
-                      </pre>
-                    </div>
-                  )}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Alert configuration editing coming soon.
-              </p>
+            <CardContent>
+              <AlertConfigForm
+                instanceId={instance.id}
+                current={{
+                  alertChannel: instance.alert_channel ?? 'none',
+                  alertConfig: (instance.alert_config as Record<string, unknown>) ?? {},
+                  silenceStart: instance.silence_start ?? 23,
+                  silenceEnd: instance.silence_end ?? 7,
+                }}
+                senderInstances={senderInstances ?? []}
+              />
             </CardContent>
           </Card>
         </TabsContent>

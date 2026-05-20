@@ -11,6 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { LiveMonitor } from '@/components/admin/live-monitor'
 import { ScrollText } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import type { Json } from '@/types/database'
@@ -133,11 +134,25 @@ export default async function LogsPage({ searchParams }: LogsPageProps) {
         </div>
       </div>
 
+      {/* Live monitor */}
       <Card>
         <CardHeader>
-          <CardTitle>Event Log</CardTitle>
+          <CardTitle>Monitor ao vivo</CardTitle>
           <CardDescription>
-            Real-time events received from connected WhatsApp instances
+            Eventos chegando em tempo real via Supabase Realtime — sem precisar atualizar a página
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <LiveMonitor />
+        </CardContent>
+      </Card>
+
+      {/* Historical log */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Histórico de eventos</CardTitle>
+          <CardDescription>
+            Todos os eventos recebidos do uazapiGO — {PAGE_SIZE} por página
           </CardDescription>
         </CardHeader>
         <CardContent>

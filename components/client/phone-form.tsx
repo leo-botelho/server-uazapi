@@ -17,9 +17,9 @@ import { cn } from '@/lib/utils'
 const phoneSchema = z.object({
   phone: z
     .string()
-    .min(10, 'Phone must be at least 10 digits')
-    .max(11, 'Phone must be at most 11 digits')
-    .regex(/^\d+$/, 'Phone must contain only digits'),
+    .min(10, 'Digite ao menos 10 dígitos')
+    .max(13, 'Digite no máximo 13 dígitos')
+    .regex(/^\d+$/, 'Digite apenas números'),
 })
 
 type PhoneFormValues = z.infer<typeof phoneSchema>
@@ -223,7 +223,7 @@ export function PhoneForm() {
           id="phone"
           type="tel"
           inputMode="numeric"
-          placeholder="11999999999"
+          placeholder="5511999999999"
           autoComplete="tel-national"
           aria-invalid={!!errors.phone}
           {...register('phone')}
@@ -234,7 +234,7 @@ export function PhoneForm() {
           </p>
         )}
         <p className="text-xs text-muted-foreground">
-          Enter only digits. Format: DDD + number (e.g., 11999999999)
+          Somente números. Com DDI: 5511999999999 — sem DDI: 11999999999
         </p>
       </div>
 

@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Power, PowerOff, Key, Loader2, Copy, CheckCircle } from 'lucide-react'
+import { Power, PowerOff, Key, Loader2, Copy, CheckCircle, RotateCcw } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { QrDisplay } from '@/components/client/qr-display'
@@ -34,6 +34,7 @@ export function InstanceConnectActions({
   const [reconnectToken, setReconnectToken] = useState<string | null>(null)
   const [tokenCopied, setTokenCopied] = useState(false)
   const [isDisconnecting, startDisconnect] = useTransition()
+  const [isResetting, startReset] = useTransition()
   const [isGeneratingToken, startGenerateToken] = useTransition()
 
   async function handleDisconnect() {
@@ -50,6 +51,22 @@ export function InstanceConnectActions({
         router.refresh()
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Failed to disconnect')
+      }
+    })
+  }
+
+  async function handleReset() {
+    startReset(async () => {
+      try {
+        const res = await fetch(`/api/instances/${instanceId}/reset`, { method: 'POST' })
+        if (!res.ok) {
+          const body = (await res.json()) as { error?: string }
+          throw new Error(body.error ?? 'Failed to reset')
+        }
+        toast.success('Runtime reiniciado com sucesso')
+        router.refresh()
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Falha ao reiniciar runtime')
       }
     })
   }
@@ -155,9 +172,25 @@ export function InstanceConnectActions({
             ) : (
               <PowerOff className="size-4" />
             )}
-            {isDisconnecting ? 'Disconnecting...' : 'Disconnect'}
+            {isDisconnecting ? 'Desconectando...' : 'Desconectar'}
           </Button>
         )}
+
+        {/* Reset runtime — available in any state */}
+        <Button
+          variant="outline"
+          onClick={handleReset}
+          disabled={isResetting}
+          className="gap-2"
+          title="Reinicia o runtime sem desconectar a sessão. Útil quando a instância trava."
+        >
+          {isResetting ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <RotateCcw className="size-4" />
+          )}
+          {isResetting ? 'Reiniciando...' : 'Reset runtime'}
+        </Button>
       </div>
 
       {/* Reconnect token */}

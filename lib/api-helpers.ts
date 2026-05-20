@@ -57,10 +57,34 @@ export async function getInstanceClient(instanceId: string): Promise<{
   const uazapiToken = instance.uazapi_token
   const server = Array.isArray(instance.servers) ? instance.servers[0] : instance.servers
 
+  // 1. Instance has a dedicated server record → highest priority
   if (server?.url && server?.admin_token) {
     return { client: createUazapi(server.url, server.admin_token), uazapiToken }
   }
 
+  // 2. Env var configured (Cloudflare Worker runtime secret)
+  if (process.env.UAZAPI_BASE_URL && process.env.UAZAPI_ADMIN_TOKEN) {
+    return { client: uazapi, uazapiToken }
+  }
+
+  // 3. Fall back to admin profile — covers instances synced before server_id was set
+  //    and environments where env vars aren't configured yet
+  const { data: profile } = await supabase
+    .from('admin_profiles')
+    .select('uazapi_server_url, uazapi_admin_token')
+    .neq('uazapi_server_url', '')
+    .neq('uazapi_admin_token', '')
+    .limit(1)
+    .maybeSingle()
+
+  if (profile?.uazapi_server_url && profile?.uazapi_admin_token) {
+    return {
+      client: createUazapi(profile.uazapi_server_url, profile.uazapi_admin_token),
+      uazapiToken,
+    }
+  }
+
+  // Ultimate fallback — will use free.uazapi.com default, likely to fail
   return { client: uazapi, uazapiToken }
 }
 

@@ -61,6 +61,9 @@ function createUazapiClient(baseUrl: string, defaultAdminToken: string) {
     disconnect: (token: string) =>
       request<void>('/instance/disconnect', { method: 'POST', token }),
 
+    resetInstance: (token: string) =>
+      request<void>('/instance/reset', { method: 'POST', token }),
+
     deleteInstance: (token: string) =>
       request<void>('/instance', { method: 'DELETE', token }),
 
@@ -81,6 +84,14 @@ function createUazapiClient(baseUrl: string, defaultAdminToken: string) {
         method: 'POST',
         token,
         body: JSON.stringify({ url, events }),
+      }),
+
+    // Send text message — used internally for WhatsApp disconnect alerts
+    sendText: (token: string, to: string, text: string) =>
+      request<void>('/send/text', {
+        method: 'POST',
+        token,
+        body: JSON.stringify({ number: to, text }),
       }),
   }
 }
