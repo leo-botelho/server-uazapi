@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { getInstanceClient } from '@/lib/api-helpers'
-import type { WebhookConnectionEvent } from '@/lib/uazapi/types'
+import type { WebhookConnectionEvent, InstanceStatus } from '@/lib/uazapi/types'
 import type { Json } from '@/types/database'
 import { randomBytes } from 'crypto'
 
@@ -17,24 +17,42 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  if (
-    typeof body !== 'object' ||
-    body === null ||
-    !('event' in body) ||
-    !('instance' in body) ||
-    !('data' in body)
-  ) {
+  if (typeof body !== 'object' || body === null) {
     return NextResponse.json({ error: 'Malformed payload' }, { status: 400 })
   }
 
-  const event = body as WebhookConnectionEvent
+  const raw = body as Record<string, unknown>
 
-  if (event.event !== 'connection') {
+  // uazapiGO sends: { event, instance, data: { status, phone?, reason? } }
+  // Accept and log any event; only process 'connection' events.
+  if (raw['event'] !== 'connection') {
     return NextResponse.json({ received: true })
   }
 
-  const uazapiToken = event.instance
-  const { status, phone, reason } = event.data
+  // Normalise: instance token may be in `instance` (string) or nested object
+  const rawInstance = raw['instance']
+  const uazapiToken = typeof rawInstance === 'string'
+    ? rawInstance
+    : (rawInstance as Record<string, unknown>)?.['token'] as string | undefined
+
+  if (!uazapiToken) {
+    console.warn('[webhook] connection event missing instance token:', JSON.stringify(raw).slice(0, 200))
+    return NextResponse.json({ received: true })
+  }
+
+  const rawData = (raw['data'] ?? {}) as Record<string, unknown>
+  const status = rawData['status'] as InstanceStatus | undefined
+  const phone  = typeof rawData['phone']  === 'string' ? rawData['phone']  : undefined
+  const reason = typeof rawData['reason'] === 'string' ? rawData['reason'] : undefined
+
+  // Re-create typed event for downstream use
+  const event: WebhookConnectionEvent = {
+    event: 'connection',
+    instance: uazapiToken,
+    data: { status: status ?? 'disconnected', phone, reason },
+  }
+
+  void reason // used only in payload log
 
   const supabase = await createServiceClient()
 

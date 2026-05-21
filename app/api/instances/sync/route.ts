@@ -8,14 +8,11 @@ import type { InstanceStatus } from '@/lib/uazapi/types'
  *
  * Fetches all instances from the configured uazapiGO server and:
  *  - Inserts instances not yet tracked in the database.
- *  - Repairs existing instances whose uazapi_token was stored incorrectly
- *    (e.g. previously saved inst.id instead of inst.token).
+ *  - Repairs existing instances whose uazapi_token was stored incorrectly.
+ *  - Updates status, phone, profile for ALL already-synced instances.
+ *  - Configures webhooks on ALL instances (idempotent).
  *
- * Returns { imported, repaired, skipped, total }
- *
- * NOTE: uazapiGO returns the authentication token in the `token` field of each
- * instance object.  The `id` field (if present) is a different internal identifier
- * and must NOT be used as the authentication token.
+ * Returns { imported, repaired, updated, skipped, total }
  */
 export async function POST(): Promise<NextResponse> {
   const { error } = await requireAuth()
@@ -37,7 +34,7 @@ export async function POST(): Promise<NextResponse> {
   }
 
   if (!Array.isArray(remoteInstances) || remoteInstances.length === 0) {
-    return NextResponse.json({ imported: 0, repaired: 0, skipped: 0, total: 0 })
+    return NextResponse.json({ imported: 0, repaired: 0, updated: 0, skipped: 0, total: 0 })
   }
 
   const supabase = await createServiceClient()
@@ -52,14 +49,24 @@ export async function POST(): Promise<NextResponse> {
 
   // Helper: canonical auth token for a remote instance
   const authToken = (inst: (typeof remoteInstances)[number]): string =>
-    // Prefer `token` field; fall back to `id` for older server versions
     (inst.token ?? inst.id ?? '')
 
-  const toInsert:  typeof remoteInstances = []
+  // Helper: build the fields to update from a remote instance
+  function instanceFields(inst: (typeof remoteInstances)[number]) {
+    return {
+      status: inst.status,
+      phone_connected:     inst.owner ?? inst.phone ?? null,
+      profile_name:        inst.profileName ?? inst.profileInfo?.name ?? null,
+      profile_picture:     inst.profilePicUrl ?? inst.profileInfo?.picture ?? null,
+      last_disconnected_at: inst.lastDisconnect ?? inst.lastDisconnection ?? null,
+    }
+  }
+
+  const toInsert: typeof remoteInstances = []
+
   const toRepair: Array<{
     dbId: string
     correctToken: string
-    name: string
     status: InstanceStatus
     phoneConnected: string | null
     profileName: string | null
@@ -67,37 +74,76 @@ export async function POST(): Promise<NextResponse> {
     lastDisconnectedAt: string | null
   }> = []
 
+  const toUpdate: Array<{
+    dbId: string
+    status: InstanceStatus
+    phoneConnected: string | null
+    profileName: string | null
+    profilePicture: string | null
+    lastDisconnectedAt: string | null
+    uazapiToken: string
+  }> = []
+
   for (const inst of remoteInstances) {
     const correct = authToken(inst)
-    if (!correct) continue   // uazapiGO returned an unusable instance — skip
+    if (!correct) continue
 
     const byToken = existingByToken.get(correct)
     const byName  = existingByName.get(inst.name)
+    const fields  = instanceFields(inst)
 
     if (byToken) {
-      // Already in DB with the correct token — nothing to do
+      // Already in DB with correct token — refresh status + profile data
+      toUpdate.push({
+        dbId:              byToken.id,
+        uazapiToken:       correct,
+        status:            fields.status,
+        phoneConnected:    fields.phone_connected,
+        profileName:       fields.profile_name,
+        profilePicture:    fields.profile_picture,
+        lastDisconnectedAt: fields.last_disconnected_at,
+      })
       continue
     }
 
     if (byName) {
-      // Exists in DB but with a different (wrong) token — repair it
+      // Exists in DB but with wrong token — repair
       toRepair.push({
-        dbId: byName.id,
-        correctToken: correct,
-        name: inst.name,
-        status: inst.status,
-        phoneConnected: inst.owner ?? inst.phone ?? null,
-        profileName: inst.profileName ?? inst.profileInfo?.name ?? null,
-        profilePicture: inst.profilePicUrl ?? inst.profileInfo?.picture ?? null,
-        lastDisconnectedAt: inst.lastDisconnect ?? inst.lastDisconnection ?? null,
+        dbId:              byName.id,
+        correctToken:      correct,
+        status:            fields.status,
+        phoneConnected:    fields.phone_connected,
+        profileName:       fields.profile_name,
+        profilePicture:    fields.profile_picture,
+        lastDisconnectedAt: fields.last_disconnected_at,
       })
     } else {
-      // New instance — insert
+      // Brand-new instance
       toInsert.push(inst)
     }
   }
 
-  // ── Repair existing rows ────────────────────────────────────────────────
+  // ── Update already-synced instances (status + profile) ───────────────────
+  let updatedCount = 0
+  if (toUpdate.length > 0) {
+    const results = await Promise.allSettled(
+      toUpdate.map(({ dbId, status, phoneConnected, profileName, profilePicture, lastDisconnectedAt }) =>
+        supabase
+          .from('instances')
+          .update({
+            status,
+            ...(phoneConnected    !== null && { phone_connected: phoneConnected }),
+            ...(profileName       !== null && { profile_name: profileName }),
+            ...(profilePicture    !== null && { profile_picture: profilePicture }),
+            ...(lastDisconnectedAt !== null && { last_disconnected_at: lastDisconnectedAt }),
+          })
+          .eq('id', dbId)
+      )
+    )
+    updatedCount = results.filter((r) => r.status === 'fulfilled').length
+  }
+
+  // ── Repair wrong tokens ───────────────────────────────────────────────────
   let repairedCount = 0
   if (toRepair.length > 0) {
     const results = await Promise.allSettled(
@@ -107,35 +153,27 @@ export async function POST(): Promise<NextResponse> {
           .update({
             uazapi_token: correctToken,
             status,
-            ...(phoneConnected !== null && { phone_connected: phoneConnected }),
-            ...(profileName !== null && { profile_name: profileName }),
-            ...(profilePicture !== null && { profile_picture: profilePicture }),
+            ...(phoneConnected    !== null && { phone_connected: phoneConnected }),
+            ...(profileName       !== null && { profile_name: profileName }),
+            ...(profilePicture    !== null && { profile_picture: profilePicture }),
             ...(lastDisconnectedAt !== null && { last_disconnected_at: lastDisconnectedAt }),
           })
           .eq('id', dbId)
       )
     )
     repairedCount = results.filter((r) => r.status === 'fulfilled').length
-    const failures = results.filter((r) => r.status === 'rejected')
-    if (failures.length > 0) {
-      console.warn('[sync] Some token repairs failed:', failures.length)
+    if (results.filter((r) => r.status === 'rejected').length > 0) {
+      console.warn('[sync] Some token repairs failed')
     }
   }
 
-  // ── Insert new instances ────────────────────────────────────────────────
+  // ── Insert new instances ──────────────────────────────────────────────────
   let importedCount = 0
   if (toInsert.length > 0) {
     const rows = toInsert.map((inst) => ({
       name: inst.name,
       uazapi_token: authToken(inst),
-      status: inst.status,
-      // uazapiGO returns the connected phone as "owner"; fall back to "phone" for older versions
-      phone_connected: inst.owner ?? inst.phone ?? null,
-      // Profile fields use flat names in the API response (not nested profileInfo)
-      profile_name: inst.profileName ?? inst.profileInfo?.name ?? null,
-      profile_picture: inst.profilePicUrl ?? inst.profileInfo?.picture ?? null,
-      // Disconnect timestamp: "lastDisconnect" is the current field name
-      last_disconnected_at: inst.lastDisconnect ?? inst.lastDisconnection ?? null,
+      ...instanceFields(inst),
       active: true,
     }))
 
@@ -150,39 +188,29 @@ export async function POST(): Promise<NextResponse> {
     }
 
     importedCount = rows.length
-
-    // Configure webhooks on newly imported instances (non-fatal)
-    const webhookUrl = process.env.NEXT_PUBLIC_APP_URL
-      ? `${process.env.NEXT_PUBLIC_APP_URL}/api/webhook`
-      : null
-
-    if (webhookUrl) {
-      await Promise.allSettled(
-        rows.map((r) =>
-          adminClient.setWebhook(r.uazapi_token, webhookUrl, ['connection'])
-        )
-      )
-    }
   }
 
-  // Also set webhooks for repaired instances (may have been missing)
+  // ── Configure webhooks on ALL instances (idempotent) ─────────────────────
   const webhookUrl = process.env.NEXT_PUBLIC_APP_URL
     ? `${process.env.NEXT_PUBLIC_APP_URL}/api/webhook`
     : null
-  if (webhookUrl && toRepair.length > 0) {
+
+  if (webhookUrl) {
+    const allTokens = [
+      ...toUpdate.map((r) => r.uazapiToken),
+      ...toRepair.map((r) => r.correctToken),
+      ...toInsert.map((inst) => authToken(inst)),
+    ]
     await Promise.allSettled(
-      toRepair.map(({ correctToken }) =>
-        adminClient.setWebhook(correctToken, webhookUrl, ['connection'])
-      )
+      allTokens.map((t) => adminClient.setWebhook(t, webhookUrl, ['connection']))
     )
   }
-
-  const skipped = remoteInstances.length - toInsert.length - toRepair.length
 
   return NextResponse.json({
     imported: importedCount,
     repaired: repairedCount,
-    skipped,
-    total: remoteInstances.length,
+    updated:  updatedCount,
+    skipped:  0,
+    total:    remoteInstances.length,
   })
 }
