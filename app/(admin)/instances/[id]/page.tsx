@@ -14,6 +14,7 @@ import { InstanceStatusBadge } from '@/components/admin/instance-status-badge'
 import { InstanceConnectActions } from './connect-actions'
 import { LinkClientForm } from './link-client-form'
 import { AlertConfigForm } from './alert-config-form'
+import { TokenForm } from './token-form'
 import { formatDistanceToNow } from 'date-fns'
 import { ArrowLeft } from 'lucide-react'
 import type { Json } from '@/types/database'
@@ -201,7 +202,7 @@ export default async function InstanceDetailPage({
         </TabsContent>
 
         {/* Connection */}
-        <TabsContent value="connection">
+        <TabsContent value="connection" className="space-y-4">
           <Card>
             <CardHeader>
               <CardTitle>Gerenciamento de conexão</CardTitle>
@@ -214,6 +215,21 @@ export default async function InstanceDetailPage({
                 instanceId={instance.id}
                 currentStatus={instance.status}
                 uazapiToken={instance.uazapi_token}
+              />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Token da instância</CardTitle>
+              <CardDescription>
+                Token de autenticação uazapiGO. Se a conexão falhar com erro 401, atualize este valor com o token correto do painel uazapiGO.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <TokenForm
+                instanceId={instance.id}
+                currentToken={instance.uazapi_token}
               />
             </CardContent>
           </Card>

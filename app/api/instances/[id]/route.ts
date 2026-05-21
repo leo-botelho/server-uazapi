@@ -162,6 +162,10 @@ export async function PATCH(
     update.silence_end = raw['silenceEnd']
   }
 
+  if (typeof raw['uazapiToken'] === 'string' && raw['uazapiToken'].trim() !== '') {
+    update.uazapi_token = raw['uazapiToken'].trim()
+  }
+
   if (Object.keys(update).length === 0) {
     return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 })
   }
