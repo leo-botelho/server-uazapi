@@ -56,7 +56,16 @@ export async function POST(): Promise<NextResponse> {
     (inst.token ?? inst.id ?? '')
 
   const toInsert:  typeof remoteInstances = []
-  const toRepair:  Array<{ dbId: string; correctToken: string; name: string; status: InstanceStatus }> = []
+  const toRepair: Array<{
+    dbId: string
+    correctToken: string
+    name: string
+    status: InstanceStatus
+    phoneConnected: string | null
+    profileName: string | null
+    profilePicture: string | null
+    lastDisconnectedAt: string | null
+  }> = []
 
   for (const inst of remoteInstances) {
     const correct = authToken(inst)
@@ -77,6 +86,10 @@ export async function POST(): Promise<NextResponse> {
         correctToken: correct,
         name: inst.name,
         status: inst.status,
+        phoneConnected: inst.owner ?? inst.phone ?? null,
+        profileName: inst.profileName ?? inst.profileInfo?.name ?? null,
+        profilePicture: inst.profilePicUrl ?? inst.profileInfo?.picture ?? null,
+        lastDisconnectedAt: inst.lastDisconnect ?? inst.lastDisconnection ?? null,
       })
     } else {
       // New instance — insert
@@ -88,10 +101,17 @@ export async function POST(): Promise<NextResponse> {
   let repairedCount = 0
   if (toRepair.length > 0) {
     const results = await Promise.allSettled(
-      toRepair.map(({ dbId, correctToken, status }) =>
+      toRepair.map(({ dbId, correctToken, status, phoneConnected, profileName, profilePicture, lastDisconnectedAt }) =>
         supabase
           .from('instances')
-          .update({ uazapi_token: correctToken, status })
+          .update({
+            uazapi_token: correctToken,
+            status,
+            ...(phoneConnected !== null && { phone_connected: phoneConnected }),
+            ...(profileName !== null && { profile_name: profileName }),
+            ...(profilePicture !== null && { profile_picture: profilePicture }),
+            ...(lastDisconnectedAt !== null && { last_disconnected_at: lastDisconnectedAt }),
+          })
           .eq('id', dbId)
       )
     )
@@ -109,10 +129,13 @@ export async function POST(): Promise<NextResponse> {
       name: inst.name,
       uazapi_token: authToken(inst),
       status: inst.status,
-      phone_connected: inst.phone ?? null,
-      profile_name: inst.profileInfo?.name ?? null,
-      profile_picture: inst.profileInfo?.picture ?? null,
-      last_disconnected_at: inst.lastDisconnection ?? null,
+      // uazapiGO returns the connected phone as "owner"; fall back to "phone" for older versions
+      phone_connected: inst.owner ?? inst.phone ?? null,
+      // Profile fields use flat names in the API response (not nested profileInfo)
+      profile_name: inst.profileName ?? inst.profileInfo?.name ?? null,
+      profile_picture: inst.profilePicUrl ?? inst.profileInfo?.picture ?? null,
+      // Disconnect timestamp: "lastDisconnect" is the current field name
+      last_disconnected_at: inst.lastDisconnect ?? inst.lastDisconnection ?? null,
       active: true,
     }))
 

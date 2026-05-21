@@ -13,15 +13,41 @@ export interface UazapiInstance {
   token?: string
   name: string
   status: InstanceStatus
+
+  // Connect response fields
   qrcode?: string
-  pairingCode?: string
+  paircode?: string   // uazapiGO uses "paircode" in list; "pairingCode" in connect response
+
+  /**
+   * Connected WhatsApp number (E.164-ish).
+   * Returned as "owner" in /instance/all — e.g. "5521965560026".
+   */
+  owner?: string
+  /** @deprecated alias — some versions return "phone" instead of "owner" */
   phone?: string
+
+  /** Profile display name — returned as "profileName" in /instance/all */
+  profileName?: string
+  /** Profile picture URL — returned as "profilePicUrl" in /instance/all */
+  profilePicUrl?: string
+
+  /**
+   * Last disconnect timestamp — returned as "lastDisconnect" in /instance/all.
+   * Format: "2026-04-30 16:43:29.235Z"
+   */
+  lastDisconnect?: string
+  /** @deprecated alias — older field name */
+  lastDisconnection?: string
+
+  /** ISO timestamp when the instance was created */
+  created?: string
+  createdAt?: string
+
+  // Extra fields returned by uazapiGO (stored for reference only)
   profileInfo?: {
     name?: string
     picture?: string
   }
-  lastDisconnection?: string
-  createdAt: string
 }
 
 export interface ConnectRequest {
