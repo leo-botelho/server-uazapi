@@ -50,6 +50,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     // 1. Trigger connect — starts QR generation on the uazapiGO side
     const connectResult = await client.connect(uazapiToken, payload)
+    console.log('[connect/qr] connect response:', JSON.stringify(connectResult))
 
     if (connectResult.status === 'connected') {
       return NextResponse.json({ status: 'connected' })
@@ -60,10 +61,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     // 2. QR not ready yet — poll /instance/status until it appears (up to ~12 s)
+    let lastStatusResult: unknown = connectResult
     for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt++) {
       await sleep(POLL_INTERVAL_MS)
 
       const statusResult = await client.getStatus(uazapiToken)
+      lastStatusResult = statusResult
+      console.log(`[connect/qr] poll ${attempt + 1}:`, JSON.stringify(statusResult))
 
       if (statusResult.status === 'connected') {
         return NextResponse.json({ status: 'connected' })
@@ -75,8 +79,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
     }
 
+    // Include last response in error to help diagnose
+    const debug = JSON.stringify(lastStatusResult).slice(0, 300)
+    console.error('[connect/qr] QR not generated. Last response:', debug)
     return NextResponse.json(
-      { error: 'QR code não gerado. A instância pode estar em estado inválido — tente reiniciar o runtime e conectar novamente.' },
+      { error: `QR não gerado. Resposta da instância: ${debug}` },
       { status: 502 }
     )
   } catch (err) {
