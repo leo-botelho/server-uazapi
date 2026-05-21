@@ -16,6 +16,7 @@ export function SyncInstancesButton() {
         const res = await fetch('/api/instances/sync', { method: 'POST' })
         const data = (await res.json()) as {
           imported?: number
+          repaired?: number
           skipped?: number
           total?: number
           error?: string
@@ -26,18 +27,19 @@ export function SyncInstancesButton() {
           return
         }
 
-        const { imported = 0, skipped = 0, total = 0 } = data
+        const { imported = 0, repaired = 0, skipped = 0, total = 0 } = data
 
-        if (imported === 0) {
+        const parts: string[] = []
+        if (imported > 0) parts.push(`${imported} importada${imported !== 1 ? 's' : ''}`)
+        if (repaired > 0) parts.push(`${repaired} token${repaired !== 1 ? 's' : ''} corrigido${repaired !== 1 ? 's' : ''}`)
+
+        if (parts.length > 0) {
+          toast.success(parts.join(' · ') + (skipped > 0 ? ` (${skipped} sem alteração)` : ''))
+        } else {
           toast.info(
             total === 0
               ? 'Nenhuma instância encontrada no uazapiGO'
               : `Todas as ${total} instâncias já estão sincronizadas`
-          )
-        } else {
-          toast.success(
-            `${imported} instância${imported !== 1 ? 's' : ''} importada${imported !== 1 ? 's' : ''}` +
-              (skipped > 0 ? ` (${skipped} já existiam)` : '')
           )
         }
 

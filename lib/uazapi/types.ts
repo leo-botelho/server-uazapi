@@ -3,7 +3,14 @@ export type InstanceStatus = 'connected' | 'disconnected' | 'connecting'
 export type BrowserType = 'auto' | 'safari' | 'firefox' | 'edge' | 'chrome'
 
 export interface UazapiInstance {
-  id: string
+  /** Internal identifier returned by uazapiGO (may differ from the auth token). */
+  id?: string
+  /**
+   * Instance authentication token — sent as `token` header in instance-level requests.
+   * This is the value that must be stored in `instances.uazapi_token`.
+   * uazapiGO returns it as `token` in /instance/all and /instance/create responses.
+   */
+  token?: string
   name: string
   status: InstanceStatus
   qrcode?: string

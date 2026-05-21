@@ -85,12 +85,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'Failed to create instance in uazapiGO' }, { status: 502 })
   }
 
-  // uazapiGO returns the instance token as `id` on the UazapiInstance type
-  const uazapiToken = uazapiInstance.id
+  // uazapiGO returns the authentication token in the `token` field.
+  // Fall back to `id` for older server versions that may not have the `token` field.
+  const uazapiToken = uazapiInstance.token ?? uazapiInstance.id
 
   if (!uazapiToken) {
     console.error('[instances POST] uazapi returned no token', uazapiInstance)
-    return NextResponse.json({ error: 'uazapiGO returned no token' }, { status: 502 })
+    return NextResponse.json({ error: 'uazapiGO não retornou nenhum token' }, { status: 502 })
   }
 
   // 2. Configure the webhook on the new instance so we receive connection events
