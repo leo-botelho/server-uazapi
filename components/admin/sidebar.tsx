@@ -10,7 +10,6 @@ import {
   ScrollText,
   Settings,
   LogOut,
-  Zap,
   Server,
   UserCircle,
 } from 'lucide-react'
@@ -27,7 +26,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
-import { cn } from '@/lib/utils'
+import { Logo } from '@/components/brand/logo'
 
 interface NavItem {
   label: string
@@ -63,14 +62,8 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
   return (
     <Sidebar>
       <SidebarHeader>
-        <div className="flex items-center gap-2 px-2 py-2">
-          <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <Zap className="size-4" />
-          </div>
-          <div className="flex flex-col leading-none">
-            <span className="font-semibold text-sm">UazAPI</span>
-            <span className="text-xs text-muted-foreground">Manager</span>
-          </div>
+        <div className="px-2 py-3">
+          <Logo size={30} showWordmark wordmarkSize="sm" />
         </div>
       </SidebarHeader>
 

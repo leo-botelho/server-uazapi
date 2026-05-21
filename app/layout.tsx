@@ -1,23 +1,42 @@
 import type { Metadata } from 'next'
-import { Geist, Geist_Mono } from 'next/font/google'
+import { IBM_Plex_Serif, IBM_Plex_Mono, Instrument_Serif } from 'next/font/google'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Toaster } from '@/components/ui/sonner'
 import './globals.css'
 
-const geistSans = Geist({
-  variable: '--font-geist-sans',
+/* ─── Fontes da marca Smart Skills ──────────────────────────────────────── */
+
+const ibmPlexSerif = IBM_Plex_Serif({
+  variable: '--font-ibm-serif',
   subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
+  style: ['normal', 'italic'],
+  display: 'swap',
 })
 
-const geistMono = Geist_Mono({
-  variable: '--font-geist-mono',
+const ibmPlexMono = IBM_Plex_Mono({
+  variable: '--font-ibm-mono',
   subsets: ['latin'],
+  weight: ['400', '500', '600'],
+  display: 'swap',
 })
+
+const instrumentSerif = Instrument_Serif({
+  variable: '--font-instrument',
+  subsets: ['latin'],
+  weight: ['400'],
+  style: ['normal', 'italic'],
+  display: 'swap',
+})
+
+/* ─── Metadata ───────────────────────────────────────────────────────────── */
 
 export const metadata: Metadata = {
-  title: 'WhatsApp Instance Manager',
-  description: 'Manage WhatsApp instances via uazapiGO',
+  title: 'Smart Skills Hub',
+  description: 'Gerenciador de instâncias WhatsApp via uazapiGO',
 }
+
+/* ─── Root layout ────────────────────────────────────────────────────────── */
 
 export default function RootLayout({
   children,
@@ -27,7 +46,7 @@ export default function RootLayout({
   return (
     <html
       lang="pt-BR"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${ibmPlexSerif.variable} ${ibmPlexMono.variable} ${instrumentSerif.variable} dark h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
         <TooltipProvider>

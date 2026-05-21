@@ -3,6 +3,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ConnectionStatus } from '@/components/client/connection-status'
 import { QrDisplay } from '@/components/client/qr-display'
+import { Logo } from '@/components/brand/logo'
 
 interface ReconnectPageProps {
   params: Promise<{ token: string }>
@@ -38,12 +39,15 @@ export default async function ReconnectPage({ params }: ReconnectPageProps) {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4 bg-muted/50">
+    <div className="flex min-h-screen flex-col items-center justify-center gap-8 p-4 bg-background">
+      {/* Logo centralizado acima do card */}
+      <Logo size={40} showWordmark wordmarkSize="lg" />
+
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl">Reconectar WhatsApp</CardTitle>
           <CardDescription>
-            Reconecte sua instância WhatsApp: {reconnectToken.instance.name}
+            Instância: <strong className="text-foreground">{reconnectToken.instance.name}</strong>
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
