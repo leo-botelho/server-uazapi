@@ -61,7 +61,14 @@ export interface ConnectRequest {
 
 export interface ConnectResponse {
   status: InstanceStatus
+  /** QR code — base64 string (sem prefixo data:image). Disponível quando status = "connecting". */
   qrcode?: string
+  /**
+   * Código de pareamento — 8 dígitos.
+   * uazapiGO retorna como "paircode" (não "pairingCode").
+   */
+  paircode?: string
+  /** @deprecated alias mantido para compatibilidade */
   pairingCode?: string
 }
 

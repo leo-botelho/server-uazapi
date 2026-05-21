@@ -4,6 +4,13 @@ import type { ConnectRequest, BrowserType } from '@/lib/uazapi/types'
 
 // Public — called by the pairing-code component in the client portal.
 
+const MAX_POLL_ATTEMPTS = 8   // up to ~12 seconds waiting for pair code
+const POLL_INTERVAL_MS  = 1500
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms))
+}
+
 export async function POST(request: NextRequest): Promise<NextResponse> {
   let body: unknown
   try {
@@ -50,15 +57,40 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const result = await client.connect(uazapiToken, payload)
+    // 1. Trigger connect — starts pairing code generation on the uazapiGO side
+    const connectResult = await client.connect(uazapiToken, payload)
 
-    if (result.status === 'connected') return NextResponse.json({ status: 'connected' })
-
-    if (!result.pairingCode) {
-      return NextResponse.json({ error: 'No pairing code returned by the instance' }, { status: 502 })
+    if (connectResult.status === 'connected') {
+      return NextResponse.json({ status: 'connected' })
     }
 
-    return NextResponse.json({ pairingCode: result.pairingCode, status: result.status })
+    // uazapiGO returns "paircode" (not "pairingCode") — normalise here
+    const code = connectResult.paircode ?? connectResult.pairingCode
+    if (code) {
+      return NextResponse.json({ pairingCode: code, status: connectResult.status })
+    }
+
+    // 2. Code not ready yet — poll /instance/status until it appears (up to ~12 s)
+    for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt++) {
+      await sleep(POLL_INTERVAL_MS)
+
+      const statusResult = await client.getStatus(uazapiToken)
+
+      if (statusResult.status === 'connected') {
+        return NextResponse.json({ status: 'connected' })
+      }
+
+      // UazapiInstance also has paircode field
+      const polledCode = statusResult.paircode ?? (statusResult as unknown as Record<string, unknown>)['pairingCode']
+      if (polledCode && typeof polledCode === 'string') {
+        return NextResponse.json({ pairingCode: polledCode, status: statusResult.status })
+      }
+    }
+
+    return NextResponse.json(
+      { error: 'Código de pareamento não gerado. A instância pode estar em estado inválido — tente reiniciar o runtime e conectar novamente.' },
+      { status: 502 }
+    )
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Erro desconhecido'
     console.error('[connect/pair] uazapi error:', msg)
