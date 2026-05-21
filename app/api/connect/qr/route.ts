@@ -50,7 +50,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     // 1. Trigger connect — starts QR generation on the uazapiGO side
     const connectResult = await client.connect(uazapiToken, payload)
-    console.log('[connect/qr] connect response:', JSON.stringify(connectResult))
 
     if (connectResult.status === 'connected') {
       return NextResponse.json({ status: 'connected' })
@@ -67,7 +66,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
       const statusResult = await client.getStatus(uazapiToken)
       lastStatusResult = statusResult
-      console.log(`[connect/qr] poll ${attempt + 1}:`, JSON.stringify(statusResult))
 
       if (statusResult.status === 'connected') {
         return NextResponse.json({ status: 'connected' })

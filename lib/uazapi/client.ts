@@ -1,4 +1,4 @@
-import type { UazapiInstance, ConnectRequest, ConnectResponse, ProxyCity } from './types'
+import type { UazapiInstance, ConnectRequest, ConnectResponse, ConnectResponseRaw, ProxyCity } from './types'
 
 interface RequestOptions extends Omit<RequestInit, 'headers'> {
   token?: string
@@ -51,12 +51,28 @@ function createUazapiClient(baseUrl: string, defaultAdminToken: string) {
     getStatus: (token: string) =>
       request<UazapiInstance>('/instance/status', { token }),
 
-    connect: (token: string, payload: ConnectRequest = {}) =>
-      request<ConnectResponse>('/instance/connect', {
+    connect: async (token: string, payload: ConnectRequest = {}): Promise<ConnectResponse> => {
+      // uazapiGO returns an ARRAY: [{ connected, instance: {...}, response, status }]
+      const raw = await request<ConnectResponseRaw[]>('/instance/connect', {
         method: 'POST',
         token,
         body: JSON.stringify(payload),
-      }),
+      })
+
+      // Normalise to a flat ConnectResponse
+      const item = Array.isArray(raw) ? raw[0] : (raw as unknown as ConnectResponseRaw)
+      const inst = item?.instance
+
+      // Map status: top-level item.connected = true means connected
+      const status: ConnectResponse['status'] =
+        item?.connected || inst?.status === 'connected' ? 'connected' : (inst?.status ?? 'connecting')
+
+      return {
+        status,
+        qrcode:    inst?.qrcode   || undefined,
+        paircode:  inst?.paircode || undefined,
+      }
+    },
 
     disconnect: (token: string) =>
       request<void>('/instance/disconnect', { method: 'POST', token }),

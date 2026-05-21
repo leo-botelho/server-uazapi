@@ -59,17 +59,35 @@ export interface ConnectRequest {
   proxy_managed_city?: string     // value from GET /proxy-managed/cities
 }
 
+/**
+ * Resposta normalizada do /instance/connect.
+ * O cliente faz o parse do array bruto e extrai esses campos.
+ */
 export interface ConnectResponse {
   status: InstanceStatus
-  /** QR code — base64 string (sem prefixo data:image). Disponível quando status = "connecting". */
+  /** QR code — base64 string (sem prefixo data:image). Disponível quando status = "connecting" (modo QR). */
   qrcode?: string
-  /**
-   * Código de pareamento — 8 dígitos.
-   * uazapiGO retorna como "paircode" (não "pairingCode").
-   */
+  /** Código de pareamento (ex: "5Y84-QVCP"). Disponível quando status = "connecting" (modo pairing). */
   paircode?: string
   /** @deprecated alias mantido para compatibilidade */
   pairingCode?: string
+}
+
+/**
+ * Formato BRUTO retornado por /instance/connect — array com um item.
+ * Exemplo: [{ connected: false, instance: {...}, response: "Connecting" }]
+ */
+export interface ConnectResponseRaw {
+  connected: boolean
+  instance: UazapiInstance
+  jid: string | null
+  loggedIn: boolean
+  response: string
+  status: {
+    connected: boolean
+    jid: string | null
+    loggedIn: boolean
+  }
 }
 
 export interface ProxyCity {
