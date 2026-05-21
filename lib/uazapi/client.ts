@@ -52,25 +52,24 @@ function createUazapiClient(baseUrl: string, defaultAdminToken: string) {
       request<UazapiInstance>('/instance/status', { token }),
 
     connect: async (token: string, payload: ConnectRequest = {}): Promise<ConnectResponse> => {
-      // uazapiGO returns an ARRAY: [{ connected, instance: {...}, response, status }]
-      const raw = await request<ConnectResponseRaw[]>('/instance/connect', {
+      // uazapiGO returns: { connected, instance: { status, qrcode, paircode, ... }, response, ... }
+      const raw = await request<ConnectResponseRaw>('/instance/connect', {
         method: 'POST',
         token,
         body: JSON.stringify(payload),
       })
 
-      // Normalise to a flat ConnectResponse
-      const item = Array.isArray(raw) ? raw[0] : (raw as unknown as ConnectResponseRaw)
+      // Normalise to a flat ConnectResponse — handle both single object and legacy array
+      const item: ConnectResponseRaw = Array.isArray(raw) ? raw[0] : raw
       const inst = item?.instance
 
-      // Map status: top-level item.connected = true means connected
       const status: ConnectResponse['status'] =
         item?.connected || inst?.status === 'connected' ? 'connected' : (inst?.status ?? 'connecting')
 
       return {
         status,
-        qrcode:    inst?.qrcode   || undefined,
-        paircode:  inst?.paircode || undefined,
+        qrcode:   inst?.qrcode   || undefined,
+        paircode: inst?.paircode || undefined,
       }
     },
 
