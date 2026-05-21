@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireAuth, getAdminClient } from '@/lib/api-helpers'
 import { createServiceClient } from '@/lib/supabase/server'
+import type { InstanceStatus } from '@/lib/uazapi/types'
 
 /**
  * POST /api/instances/sync
@@ -55,7 +56,7 @@ export async function POST(): Promise<NextResponse> {
     (inst.token ?? inst.id ?? '')
 
   const toInsert:  typeof remoteInstances = []
-  const toRepair:  Array<{ dbId: string; correctToken: string; name: string; status: string }> = []
+  const toRepair:  Array<{ dbId: string; correctToken: string; name: string; status: InstanceStatus }> = []
 
   for (const inst of remoteInstances) {
     const correct = authToken(inst)
