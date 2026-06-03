@@ -96,8 +96,8 @@ export function ClientProxyForm({ clientId, initialCity, initialState }: ClientP
       <div className="flex items-start gap-2 text-sm text-muted-foreground">
         <MapPin className="size-4 shrink-0 mt-0.5" />
         <span>
-          Toda vez que a instância deste cliente for conectada, o proxy da cidade selecionada
-          será injetado automaticamente — sem precisar escolher na hora.
+          Toda vez que a instância deste cliente for conectada, a cidade de conexão selecionada
+          será usada automaticamente para maior estabilidade.
         </span>
       </div>
 
@@ -105,6 +105,7 @@ export function ClientProxyForm({ clientId, initialCity, initialState }: ClientP
       <ProxyCitySelect
         defaultValue={pending.city ?? undefined}
         showEmptyState
+        adminView={true}
         onSelect={setSelected}
       />
 
@@ -129,7 +130,7 @@ export function ClientProxyForm({ clientId, initialCity, initialState }: ClientP
             className="gap-2 text-destructive hover:text-destructive"
           >
             <X className="size-3.5" />
-            Remover proxy
+            Remover cidade
           </Button>
         )}
       </div>
@@ -138,14 +139,14 @@ export function ClientProxyForm({ clientId, initialCity, initialState }: ClientP
       <p className="text-xs text-muted-foreground">
         {pending.city ? (
           <>
-            Configurado atualmente:{' '}
+            Configurada atualmente:{' '}
             <span className="font-medium text-foreground">
               {pending.city.charAt(0).toUpperCase() + pending.city.slice(1)}
               {pending.state ? ` — ${pending.state.toUpperCase()}` : ''}
             </span>
           </>
         ) : (
-          'Nenhum proxy configurado — conexão sem proxy regional.'
+          'Nenhuma cidade configurada — conexão sem região específica.'
         )}
       </p>
     </div>

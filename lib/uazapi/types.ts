@@ -111,3 +111,48 @@ export interface UazapiError {
   message: string
   statusCode: number
 }
+
+// ─── Webhook Global (/globalwebhook — admintoken) ───────────────────────────
+
+export type GlobalWebhookEvent =
+  | 'connection'
+  | 'history'
+  | 'messages'
+  | 'messages_update'
+  | 'newsletter_messages'
+  | 'call'
+  | 'contacts'
+  | 'presence'
+  | 'groups'
+  | 'labels'
+  | 'chats'
+  | 'chat_labels'
+  | 'blocks'
+  | 'sender'
+
+export type GlobalWebhookExcludeFilter =
+  | 'wasSentByApi'
+  | 'wasNotSentByApi'
+  | 'fromMeYes'
+  | 'fromMeNo'
+  | 'isGroupYes'
+  | 'isGroupNo'
+
+export interface GlobalWebhookConfig {
+  url: string
+  events: GlobalWebhookEvent[]
+  excludeMessages?: GlobalWebhookExcludeFilter[]
+  addUrlEvents?: boolean
+  addUrlTypesMessages?: boolean
+}
+
+/** Shape returned by GET /globalwebhook */
+export interface GlobalWebhookResponse {
+  id?: string
+  enabled?: boolean
+  url?: string
+  events?: GlobalWebhookEvent[]
+  excludeMessages?: GlobalWebhookExcludeFilter[]
+  addUrlEvents?: boolean
+  addUrlTypesMessages?: boolean
+}

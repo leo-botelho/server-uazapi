@@ -1,4 +1,4 @@
-import type { UazapiInstance, ConnectRequest, ConnectResponse, ConnectResponseRaw, ProxyCity } from './types'
+import type { UazapiInstance, ConnectRequest, ConnectResponse, ConnectResponseRaw, ProxyCity, GlobalWebhookConfig, GlobalWebhookResponse } from './types'
 
 interface RequestOptions extends Omit<RequestInit, 'headers'> {
   token?: string
@@ -107,6 +107,19 @@ function createUazapiClient(baseUrl: string, defaultAdminToken: string) {
         method: 'POST',
         token,
         body: JSON.stringify({ number: to, text }),
+      }),
+
+    // ─── Global Webhook — uses admintoken, no instance token ──────────────
+
+    /** GET /globalwebhook — read current global webhook config */
+    getGlobalWebhook: () =>
+      request<GlobalWebhookResponse>('/globalwebhook'),
+
+    /** POST /globalwebhook — create or update the global webhook */
+    setGlobalWebhook: (config: GlobalWebhookConfig) =>
+      request<GlobalWebhookResponse>('/globalwebhook', {
+        method: 'POST',
+        body: JSON.stringify(config),
       }),
   }
 }

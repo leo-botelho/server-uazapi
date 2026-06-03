@@ -40,7 +40,11 @@ export function AlertConfigForm({
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
 
-  const [channel, setChannel] = useState(current.alertChannel ?? 'none')
+  // Normalise: 'email' was the old DB default but is not implemented in the UI.
+  // Treat it as 'none' so the Select never shows a value that isn't in its option list.
+  const [channel, setChannel] = useState(
+    current.alertChannel === 'email' ? 'none' : (current.alertChannel ?? 'none')
+  )
   const [waFromId, setWaFromId] = useState<string>(
     (current.alertConfig['from_instance_id'] as string) ?? ''
   )
@@ -104,7 +108,9 @@ export function AlertConfigForm({
           </SelectContent>
         </Select>
         <p className="text-xs text-muted-foreground">
-          Canal usado para notificar quando esta instância desconectar
+          Canal usado para notificar quando esta instância desconectar.
+          Para envio de e-mail, use o canal <strong>n8n Webhook</strong> e configure o
+          disparo no seu fluxo n8n.
         </p>
       </div>
 

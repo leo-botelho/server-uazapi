@@ -1,5 +1,6 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Settings, ExternalLink, Info } from 'lucide-react'
+import { Settings, ExternalLink, Info, Globe } from 'lucide-react'
+import { GlobalWebhookForm } from './global-webhook-form'
 
 function maskValue(value: string | undefined): string {
   if (!value) return '(não definido)'
@@ -22,6 +23,25 @@ export default function SettingsPage() {
           </p>
         </div>
       </div>
+
+      {/* Webhook Global */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Globe className="size-5 text-muted-foreground" />
+            <CardTitle>Webhook Global do Servidor</CardTitle>
+          </div>
+          <CardDescription>
+            Configure uma única URL que receberá eventos de <strong>todas as instâncias</strong> sem
+            alterar os webhooks individuais dos agentes de IA. Use o evento{' '}
+            <code className="rounded bg-muted px-1 py-0.5 text-xs font-mono">connection</code>{' '}
+            para monitorar desconexões.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <GlobalWebhookForm />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

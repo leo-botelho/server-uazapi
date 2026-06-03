@@ -16,6 +16,12 @@ interface ProxyCitySelectProps {
    * Defaults to false (original behavior: hide silently).
    */
   showEmptyState?: boolean
+  /**
+   * When true, uses technical labels ("Cidade do proxy regional", error messages mentioning
+   * proxy/token). When false (default), uses client-friendly language ("Cidade de conexão").
+   * The unavailable/error state is always hidden silently when adminView is false.
+   */
+  adminView?: boolean
   onSelect: (city: ProxyCity | null) => void
 }
 
@@ -23,6 +29,7 @@ export function ProxyCitySelect({
   serverId,
   defaultValue,
   showEmptyState = false,
+  adminView = false,
   onSelect,
 }: ProxyCitySelectProps) {
   const [cities, setCities] = useState<ProxyCity[]>([])
@@ -66,16 +73,28 @@ export function ProxyCitySelect({
     onSelect(city)
   }
 
+  // ── Labels por contexto ───────────────────────────────────────────────────
+  const fieldLabel    = adminView ? 'Cidade do proxy regional'  : 'Cidade de conexão'
+  const placeholder   = adminView ? 'Sem proxy (padrão)'        : 'Selecione sua cidade'
+  const noneLabel     = adminView ? 'Sem proxy (padrão)'        : 'Não especificar'
+  const helperText    = adminView
+    ? 'A conexão usará um IP da cidade selecionada automaticamente.'
+    : 'Escolha a cidade onde seu WhatsApp deve conectar. Isso melhora a estabilidade da conexão.'
+
   // ── Silent mode (default): hide while loading or when empty ──────────────
   if (!showEmptyState) {
     if (loading || cities.length === 0) return null
   }
 
+  // ── Invisible mode for non-admin when proxy is unavailable ────────────────
+  // Clients don't need to see technical error messages about proxy tokens.
+  if (!adminView && (fetchError || cities.length === 0)) return null
+
   // ── Visible mode: always render, show states ──────────────────────────────
   if (loading) {
     return (
       <div className="space-y-1.5">
-        <Label>Cidade do proxy regional</Label>
+        <Label>{fieldLabel}</Label>
         <div className="flex h-10 items-center gap-2 rounded-md border border-border bg-muted/40 px-3 text-sm text-muted-foreground">
           <Loader2 className="size-3.5 animate-spin" />
           Carregando cidades…
@@ -85,9 +104,10 @@ export function ProxyCitySelect({
   }
 
   if (fetchError || cities.length === 0) {
+    // Only reached when adminView=true (non-admin already returned null above)
     return (
       <div className="space-y-1.5">
-        <Label>Cidade do proxy regional</Label>
+        <Label>{fieldLabel}</Label>
         <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2.5 text-sm text-muted-foreground">
           <WifiOff className="size-3.5 shrink-0" />
           <span>
@@ -103,13 +123,13 @@ export function ProxyCitySelect({
 
   return (
     <div className="space-y-1.5">
-      <Label htmlFor="proxy-city">Cidade do proxy regional</Label>
+      <Label htmlFor="proxy-city">{fieldLabel}</Label>
       <Select value={selected} onValueChange={handleChange}>
         <SelectTrigger id="proxy-city">
-          <SelectValue placeholder="Sem proxy (padrão)" />
+          <SelectValue placeholder={placeholder} />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="__none__">Sem proxy (padrão)</SelectItem>
+          <SelectItem value="__none__">{noneLabel}</SelectItem>
           {cities.map((city) => (
             <SelectItem key={city.value} value={city.value}>
               {city.label}
@@ -119,7 +139,7 @@ export function ProxyCitySelect({
         </SelectContent>
       </Select>
       <p className="text-xs text-muted-foreground">
-        A conexão usará um IP da cidade selecionada automaticamente.
+        {helperText}
       </p>
     </div>
   )

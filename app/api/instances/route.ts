@@ -94,21 +94,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'uazapiGO não retornou nenhum token' }, { status: 502 })
   }
 
-  // 2. Configure the webhook on the new instance so we receive connection events
-  const webhookUrl = process.env.NEXT_PUBLIC_APP_URL
-    ? `${process.env.NEXT_PUBLIC_APP_URL}/api/webhook`
-    : null
-
-  if (webhookUrl) {
-    try {
-      await adminClient.setWebhook(uazapiToken, webhookUrl, ['connection'])
-    } catch (err) {
-      // Non-fatal — admin can set webhook manually
-      console.warn('[instances POST] Failed to set webhook:', err instanceof Error ? err.message : err)
-    }
-  }
-
-  // 3. Persist to DB
+  // 2. Persist to DB
+  // NOTE: Webhook is configured globally via /globalwebhook (admintoken) in uazapiGO.
+  // Do NOT set per-instance webhooks here — that would overwrite AI agent webhook configs.
   const supabase = await createServiceClient()
 
   const { data: instance, error: insertError } = await supabase

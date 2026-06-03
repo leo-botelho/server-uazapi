@@ -136,7 +136,7 @@ export function NewClientForm() {
       </div>
 
       {/* Proxy city */}
-      <ProxyCitySelect onSelect={setProxyCity} />
+      <ProxyCitySelect onSelect={setProxyCity} adminView={true} showEmptyState={true} />
 
       <div className="flex gap-3 pt-2">
         <Button type="submit" disabled={isPending || !name.trim()}>
