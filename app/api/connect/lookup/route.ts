@@ -45,44 +45,69 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     phoneVariants.push('55' + phone)
   }
 
-  // Search for a client whose phones array contains any of the variants.
-  let client: { id: string } | null = null
+  // 1. Search directly in instances by phone_connected (preferred for multi-instance clients)
+  let instance: { id: string; name: string; status: string } | null = null
   for (const variant of phoneVariants) {
-    const { data, error: clientError } = await supabase
-      .from('clients')
-      .select('id')
+    const { data, error: instanceError } = await supabase
+      .from('instances')
+      .select('id, name, status')
       .eq('active', true)
-      .contains('phones', [variant])
+      .eq('phone_connected', variant)
       .maybeSingle()
 
-    if (clientError) {
-      console.error('[connect/lookup] Client lookup error:', clientError.message)
+    if (instanceError) {
+      console.error('[connect/lookup] Instance lookup error:', instanceError.message)
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
     }
 
     if (data) {
-      client = data
+      instance = data
       break
     }
   }
 
-  if (!client) {
-    return NextResponse.json({ error: 'not_found' }, { status: 404 })
-  }
+  // 2. Fallback: Search in clients by contact phone (for unconnected/new instances)
+  if (!instance) {
+    let client: { id: string } | null = null
+    for (const variant of phoneVariants) {
+      const { data, error: clientError } = await supabase
+        .from('clients')
+        .select('id')
+        .eq('active', true)
+        .contains('phones', [variant])
+        .maybeSingle()
 
-  // Find the first active instance for this client
-  const { data: instance, error: instanceError } = await supabase
-    .from('instances')
-    .select('id, name, status')
-    .eq('client_id', client.id)
-    .eq('active', true)
-    .order('created_at', { ascending: true })
-    .limit(1)
-    .maybeSingle()
+      if (clientError) {
+        console.error('[connect/lookup] Client lookup error:', clientError.message)
+        return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+      }
 
-  if (instanceError) {
-    console.error('[connect/lookup] Instance lookup error:', instanceError.message)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+      if (data) {
+        client = data
+        break
+      }
+    }
+
+    if (client) {
+      // Find the first active instance for this client
+      const { data: fallbackInstance, error: instanceError } = await supabase
+        .from('instances')
+        .select('id, name, status')
+        .eq('client_id', client.id)
+        .eq('active', true)
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle()
+
+      if (instanceError) {
+        console.error('[connect/lookup] Instance fallback lookup error:', instanceError.message)
+        return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+      }
+
+      if (fallbackInstance) {
+        instance = fallbackInstance
+      }
+    }
   }
 
   if (!instance) {

@@ -92,7 +92,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (phone) {
     updatePayload.phone_connected = phone
   } else if (status === 'disconnected') {
-    updatePayload.phone_connected = null
     updatePayload.last_disconnected_at = new Date().toISOString()
   }
 
