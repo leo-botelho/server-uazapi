@@ -190,22 +190,6 @@ export async function POST(): Promise<NextResponse> {
     importedCount = rows.length
   }
 
-  // ── Configure webhooks on ALL instances (idempotent) ─────────────────────
-  const webhookUrl = process.env.NEXT_PUBLIC_APP_URL
-    ? `${process.env.NEXT_PUBLIC_APP_URL}/api/webhook`
-    : null
-
-  if (webhookUrl) {
-    const allTokens = [
-      ...toUpdate.map((r) => r.uazapiToken),
-      ...toRepair.map((r) => r.correctToken),
-      ...toInsert.map((inst) => authToken(inst)),
-    ]
-    await Promise.allSettled(
-      allTokens.map((t) => adminClient.setWebhook(t, webhookUrl, ['connection']))
-    )
-  }
-
   return NextResponse.json({
     imported: importedCount,
     repaired: repairedCount,
