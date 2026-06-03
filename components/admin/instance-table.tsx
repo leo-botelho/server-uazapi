@@ -38,35 +38,15 @@ function formatDate(dateString: string | null): string {
 }
 
 function ConnectButton({ instanceId }: { instanceId: string }) {
-  const router = useRouter()
-  const [isPending, startTransition] = useTransition()
-
-  async function handleConnect() {
-    try {
-      const res = await fetch(`/api/instances/${instanceId}/connect`, {
-        method: 'POST',
-      })
-      if (!res.ok) {
-        const body = (await res.json()) as { error?: string }
-        throw new Error(body.error ?? 'Falha ao conectar')
-      }
-      toast.success('Conexão da instância iniciada')
-      startTransition(() => router.refresh())
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Falha ao conectar')
-    }
-  }
-
   return (
     <Button
       size="sm"
       variant="outline"
-      onClick={handleConnect}
-      disabled={isPending}
+      render={<Link href={`/instances/${instanceId}?tab=connection`} />}
       className="gap-1"
     >
       <Power className="size-3" />
-      {isPending ? 'Conectando...' : 'Conectar'}
+      Conectar
     </Button>
   )
 }

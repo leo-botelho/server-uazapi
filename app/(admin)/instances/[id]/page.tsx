@@ -21,6 +21,7 @@ import type { Json } from '@/types/database'
 
 interface InstanceDetailPageProps {
   params: Promise<{ id: string }>
+  searchParams: Promise<{ tab?: string }>
 }
 
 function payloadPreview(payload: Json): string {
@@ -34,8 +35,10 @@ function payloadPreview(payload: Json): string {
 
 export default async function InstanceDetailPage({
   params,
+  searchParams,
 }: InstanceDetailPageProps) {
   const { id } = await params
+  const { tab = 'overview' } = (await searchParams) ?? {}
   const supabase = await createClient()
 
   const { data: instance, error } = await supabase
@@ -89,7 +92,7 @@ export default async function InstanceDetailPage({
         <InstanceStatusBadge status={instance.status} />
       </div>
 
-      <Tabs defaultValue="overview" className="space-y-4">
+      <Tabs defaultValue={tab} className="space-y-4">
         <TabsList>
           <TabsTrigger value="overview">Visão geral</TabsTrigger>
           <TabsTrigger value="connection">Conexão</TabsTrigger>
