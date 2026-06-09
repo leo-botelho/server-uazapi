@@ -6,3 +6,12 @@ main = ".open-next/worker.js"
 [assets]
 directory = ".open-next/assets"
 binding = "ASSETS"
+
+# Cloudflare Observability — enables console.log capture and real-time log streaming.
+# View logs: Cloudflare Dashboard → Workers & Pages → server-uazapi → Logs.
+[observability.logs]
+enabled = true
+invocation_logs = true
+
+[observability.traces]
+enabled = false

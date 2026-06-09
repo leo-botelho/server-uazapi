@@ -2,12 +2,14 @@ import { Suspense } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import { StatsCard } from '@/components/admin/stats-card'
 import { InstanceTable } from '@/components/admin/instance-table'
+import { InstanceStatusLive } from '@/components/admin/instance-status-live'
+import { SyncInstancesButton } from '@/app/(admin)/instances/sync-button'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Smartphone,
   CheckCircle,
   XCircle,
-  AlertTriangle,
+  Users,
 } from 'lucide-react'
 
 async function DashboardStats() {
@@ -57,7 +59,7 @@ async function DashboardStats() {
       <StatsCard
         title="Total de clientes"
         value={totalClients ?? 0}
-        icon={AlertTriangle}
+        icon={Users}
       />
     </div>
   )
@@ -103,11 +105,22 @@ function TableLoading() {
 export default function DashboardPage() {
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Painel</h1>
-        <p className="text-muted-foreground">
-          Visão geral das suas instâncias WhatsApp
-        </p>
+      {/*
+        Invisible Realtime subscriber — listens to changes in the `instances` table
+        and calls router.refresh() so stats and table update automatically
+        whenever the DB status changes (e.g. after a sync or webhook event).
+      */}
+      <InstanceStatusLive />
+
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Painel</h1>
+          <p className="text-muted-foreground">
+            Visão geral das suas instâncias WhatsApp
+          </p>
+        </div>
+        {/* Sync available directly from dashboard — status updates propagate via Realtime */}
+        <SyncInstancesButton />
       </div>
 
       <Suspense fallback={<StatsLoading />}>

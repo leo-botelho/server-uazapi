@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { SyncInstancesButton } from './sync-button'
 import { ConnectUrlButton } from './connect-url-button'
+import { InstanceStatusLive } from '@/components/admin/instance-status-live'
 import { Plus } from 'lucide-react'
 
 async function InstancesList() {
@@ -37,6 +38,7 @@ function TableLoading() {
 export default function InstancesPage() {
   return (
     <div className="space-y-6">
+      <InstanceStatusLive />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Instâncias</h1>
