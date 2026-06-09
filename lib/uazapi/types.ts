@@ -74,8 +74,8 @@ export interface ConnectResponse {
 }
 
 /**
- * Formato BRUTO retornado por /instance/connect — array com um item.
- * Exemplo: [{ connected: false, instance: {...}, response: "Connecting" }]
+ * Formato BRUTO retornado por /instance/connect — objeto único.
+ * { connected: false, instance: { status, qrcode, paircode, ... }, response: "Connecting" }
  */
 export interface ConnectResponseRaw {
   connected: boolean
@@ -87,6 +87,19 @@ export interface ConnectResponseRaw {
     connected: boolean
     jid: string | null
     loggedIn: boolean
+  }
+}
+
+/**
+ * Formato BRUTO retornado por GET /instance/status.
+ * { instance: { status, qrcode, paircode, ... }, status: { connected, loggedIn, jid } }
+ */
+export interface StatusResponseRaw {
+  instance: UazapiInstance
+  status: {
+    connected: boolean
+    loggedIn: boolean
+    jid: unknown
   }
 }
 

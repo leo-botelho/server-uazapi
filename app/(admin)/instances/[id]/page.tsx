@@ -75,6 +75,14 @@ export default async function InstanceDetailPage({
     .neq('id', id)
     .order('name', { ascending: true })
 
+  // Last 5 notification attempts for this instance
+  const { data: notifLog } = await supabase
+    .from('notifications_log')
+    .select('*')
+    .eq('instance_id', id)
+    .order('sent_at', { ascending: false, nullsFirst: false })
+    .limit(5)
+
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
@@ -239,12 +247,14 @@ export default async function InstanceDetailPage({
         </TabsContent>
 
         {/* Alerts */}
-        <TabsContent value="alerts">
+        <TabsContent value="alerts" className="space-y-4">
           <Card>
             <CardHeader>
               <CardTitle>Alertas de desconexão</CardTitle>
               <CardDescription>
-                Configure como e quando notificar quando esta instância desconectar
+                Configure como e quando notificar quando esta instância desconectar.
+                Requer o <strong>webhook global</strong> configurado em{' '}
+                <a href="/settings" className="text-primary hover:underline">Configurações</a>.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -258,6 +268,59 @@ export default async function InstanceDetailPage({
                 }}
                 senderInstances={senderInstances ?? []}
               />
+            </CardContent>
+          </Card>
+
+          {/* Notification log */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Últimas notificações</CardTitle>
+              <CardDescription>
+                Tentativas de envio de alerta de desconexão (últimas 5)
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {notifLog && notifLog.length > 0 ? (
+                <div className="space-y-2">
+                  {notifLog.map((n) => (
+                    <div
+                      key={n.id}
+                      className="flex items-start justify-between gap-3 rounded-lg border border-border bg-muted/30 px-3 py-2"
+                    >
+                      <div className="flex flex-col gap-0.5 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <Badge
+                            variant={n.status === 'sent' ? 'default' : 'destructive'}
+                            className="text-xs capitalize"
+                          >
+                            {n.status === 'sent' ? 'Enviada' : 'Falhou'}
+                          </Badge>
+                          <span className="text-xs text-muted-foreground font-mono">
+                            {n.channel}
+                          </span>
+                        </div>
+                        {n.error && (
+                          <p className="text-xs text-destructive truncate" title={n.error}>
+                            {n.error}
+                          </p>
+                        )}
+                      </div>
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">
+                        {n.sent_at
+                          ? formatDistanceToNow(new Date(n.sent_at), { addSuffix: true })
+                          : '—'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Nenhuma notificação registrada ainda.
+                  {instance.alert_channel === 'none' || !instance.alert_channel
+                    ? ' Ative um canal de notificação acima.'
+                    : ''}
+                </p>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

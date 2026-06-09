@@ -3,10 +3,11 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Loader2, Save } from 'lucide-react'
+import { Loader2, Save, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Select,
   SelectContent,
@@ -14,6 +15,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+
+/** Mensagem padrão — mesma usada no handler quando não há template customizado. */
+const DEFAULT_TEMPLATE = `⚠️ *Instância desconectada*
+
+Olá {clientName},
+
+A instância *{instanceName}* foi desconectada do WhatsApp.
+
+Para reconectar, acesse o link abaixo:
+{reconnectUrl}
+
+_Link válido por 24 horas._`
 
 interface SenderInstance {
   id: string
@@ -51,6 +64,9 @@ export function AlertConfigForm({
   const [waTo, setWaTo] = useState<string>(
     (current.alertConfig['to'] as string) ?? ''
   )
+  const [messageTemplate, setMessageTemplate] = useState<string>(
+    (current.alertConfig['message_template'] as string) ?? ''
+  )
   const [n8nUrl, setN8nUrl] = useState<string>(
     (current.alertConfig['url'] as string) ?? ''
   )
@@ -63,7 +79,12 @@ export function AlertConfigForm({
     if (channel === 'whatsapp') {
       if (!waFromId) { toast.error('Selecione a instância remetente'); return }
       if (!waTo.trim()) { toast.error('Informe o telefone de destino'); return }
-      alertConfig = { from_instance_id: waFromId, to: waTo.trim() }
+      alertConfig = {
+        from_instance_id: waFromId,
+        to: waTo.trim(),
+        // Save template only when non-empty; empty string means "use default"
+        ...(messageTemplate.trim() ? { message_template: messageTemplate.trim() } : {}),
+      }
     } else if (channel === 'n8n') {
       if (!n8nUrl.trim()) { toast.error('Informe a URL do webhook n8n'); return }
       alertConfig = { url: n8nUrl.trim() }
@@ -149,6 +170,38 @@ export function AlertConfigForm({
             />
             <p className="text-xs text-muted-foreground">
               Número que receberá a notificação — pode ser o do cliente ou o seu
+            </p>
+          </div>
+
+          {/* Message template */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="msg-template">Mensagem de alerta</Label>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-6 gap-1 text-xs text-muted-foreground"
+                onClick={() => setMessageTemplate('')}
+                title="Restaurar mensagem padrão"
+              >
+                <RotateCcw className="size-3" />
+                Restaurar padrão
+              </Button>
+            </div>
+            <Textarea
+              id="msg-template"
+              rows={8}
+              className="font-mono text-xs resize-none"
+              placeholder={DEFAULT_TEMPLATE}
+              value={messageTemplate}
+              onChange={(e) => setMessageTemplate(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Deixe em branco para usar a mensagem padrão. Variáveis disponíveis:{' '}
+              <code className="rounded bg-muted px-1">{'{clientName}'}</code>{' '}
+              <code className="rounded bg-muted px-1">{'{instanceName}'}</code>{' '}
+              <code className="rounded bg-muted px-1">{'{reconnectUrl}'}</code>
             </p>
           </div>
         </div>

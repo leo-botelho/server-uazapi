@@ -1,4 +1,4 @@
-import type { UazapiInstance, ConnectRequest, ConnectResponse, ConnectResponseRaw, ProxyCity, GlobalWebhookConfig, GlobalWebhookResponse } from './types'
+import type { UazapiInstance, ConnectRequest, ConnectResponse, ConnectResponseRaw, StatusResponseRaw, ProxyCity, GlobalWebhookConfig, GlobalWebhookResponse } from './types'
 
 interface RequestOptions extends Omit<RequestInit, 'headers'> {
   token?: string
@@ -48,8 +48,16 @@ function createUazapiClient(baseUrl: string, defaultAdminToken: string) {
       request<UazapiInstance[]>('/instance/all'),
 
     // Instance-level endpoints
-    getStatus: (token: string) =>
-      request<UazapiInstance>('/instance/status', { token }),
+    getStatus: async (token: string): Promise<UazapiInstance> => {
+      // GET /instance/status returns { instance: UazapiInstance, status: { connected, loggedIn, jid } }
+      // qrcode and paircode are inside `instance`, NOT at the top level.
+      const raw = await request<StatusResponseRaw>('/instance/status', { token })
+      // Extract the inner instance; fall back gracefully if API shape changes
+      if (raw && typeof raw === 'object' && 'instance' in raw && raw.instance) {
+        return raw.instance
+      }
+      return raw as unknown as UazapiInstance
+    },
 
     connect: async (token: string, payload: ConnectRequest = {}): Promise<ConnectResponse> => {
       // uazapiGO returns: { connected, instance: { status, qrcode, paircode, ... }, response, ... }

@@ -168,12 +168,24 @@ async function sendDisconnectNotification(
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
   const reconnectUrl = `${appUrl}/connect/${token}`
 
-  const message =
+  // Use custom template if configured, otherwise fall back to default.
+  // Template variables: {clientName}, {instanceName}, {reconnectUrl}
+  const config = (instance.alert_config ?? {}) as Record<string, unknown>
+  const customTemplate = typeof config['message_template'] === 'string' && config['message_template'].trim()
+    ? config['message_template'].trim()
+    : null
+
+  const messageTemplate = customTemplate ??
     `⚠️ *Instância desconectada*\n\n` +
-    `Olá ${clientName},\n\n` +
-    `A instância *${instance.name}* foi desconectada do WhatsApp.\n\n` +
-    `Para reconectar, acesse o link abaixo:\n${reconnectUrl}\n\n` +
+    `Olá {clientName},\n\n` +
+    `A instância *{instanceName}* foi desconectada do WhatsApp.\n\n` +
+    `Para reconectar, acesse o link abaixo:\n{reconnectUrl}\n\n` +
     `_Link válido por 24 horas._`
+
+  const message = messageTemplate
+    .replace(/\{clientName\}/g, clientName)
+    .replace(/\{instanceName\}/g, instance.name)
+    .replace(/\{reconnectUrl\}/g, reconnectUrl)
 
   let notifStatus: 'sent' | 'failed' = 'failed'
   let notifError: string | null = null
