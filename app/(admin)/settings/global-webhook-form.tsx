@@ -106,6 +106,7 @@ export function GlobalWebhookForm() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             url: url.trim(),
+            enabled: true,   // explicitly activate — server defaults to false when omitted
             events: selectedEvents,
             excludeMessages: [],
           }),
@@ -135,16 +136,22 @@ export function GlobalWebhookForm() {
   }
 
   const isConfigured = !!(current?.url)
+  const isEnabled    = current?.enabled !== false  // treat undefined as enabled
 
   return (
     <div className="space-y-6">
 
       {/* Status + Reload */}
-      <div className="flex items-center gap-3">
-        {isConfigured ? (
+      <div className="flex items-center gap-3 flex-wrap">
+        {isConfigured && isEnabled ? (
           <Badge className="gap-1.5 bg-green-600 hover:bg-green-600 text-white">
             <CheckCircle className="size-3" />
-            Configurado
+            Ativo
+          </Badge>
+        ) : isConfigured && !isEnabled ? (
+          <Badge variant="destructive" className="gap-1.5">
+            <AlertCircle className="size-3" />
+            Desativado (enabled: false)
           </Badge>
         ) : (
           <Badge variant="secondary" className="gap-1.5">
@@ -152,11 +159,19 @@ export function GlobalWebhookForm() {
             Não configurado
           </Badge>
         )}
+
         {isConfigured && (
           <code className="text-xs text-muted-foreground truncate max-w-xs">
             {current?.url}
           </code>
         )}
+
+        {isConfigured && !isEnabled && (
+          <span className="text-xs text-destructive">
+            — clique em &quot;Salvar&quot; para reativar
+          </span>
+        )}
+
         <Button variant="ghost" size="icon" className="size-7 ml-auto" onClick={load} title="Recarregar">
           <RefreshCw className="size-3.5" />
         </Button>

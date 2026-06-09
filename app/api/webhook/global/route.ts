@@ -47,6 +47,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const config: GlobalWebhookConfig = {
     url: (raw['url'] as string).trim(),
+    enabled: true,   // always activate — GET /globalwebhook shows enabled:false when omitted
     events: raw['events'] as GlobalWebhookConfig['events'],
     excludeMessages: Array.isArray(raw['excludeMessages'])
       ? (raw['excludeMessages'] as GlobalWebhookConfig['excludeMessages'])

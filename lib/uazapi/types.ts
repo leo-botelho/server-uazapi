@@ -153,6 +153,7 @@ export type GlobalWebhookExcludeFilter =
 
 export interface GlobalWebhookConfig {
   url: string
+  enabled?: boolean           // must be true to activate — defaults to false on the server
   events: GlobalWebhookEvent[]
   excludeMessages?: GlobalWebhookExcludeFilter[]
   addUrlEvents?: boolean
