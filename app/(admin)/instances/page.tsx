@@ -5,6 +5,7 @@ import { InstanceTable } from '@/components/admin/instance-table'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { SyncInstancesButton } from './sync-button'
+import { ConnectUrlButton } from './connect-url-button'
 import { Plus } from 'lucide-react'
 
 async function InstancesList() {
@@ -43,7 +44,8 @@ export default function InstancesPage() {
             Gerencie suas instâncias WhatsApp
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          <ConnectUrlButton />
           <SyncInstancesButton />
           <Button render={<Link href="/instances/new" />}>
             <Plus className="mr-2 h-4 w-4" />

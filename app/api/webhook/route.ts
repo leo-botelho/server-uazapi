@@ -23,22 +23,35 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const raw = body as Record<string, unknown>
 
+  // Log ALL incoming events (helps diagnose format/routing issues).
+  // Truncated to avoid flooding logs with message payloads.
+  const eventType = String(raw['event'] ?? 'unknown')
+  console.log(`[webhook] event="${eventType}" keys=${Object.keys(raw).join(',')}`
+    + ` payload=${JSON.stringify(raw).slice(0, 400)}`)
+
   // uazapiGO sends: { event, instance, data: { status, phone?, reason? } }
-  // Accept and log any event; only process 'connection' events.
+  // Only process 'connection' events for status monitoring.
   if (raw['event'] !== 'connection') {
     return NextResponse.json({ received: true })
   }
 
-  // Normalise: instance token may be in `instance` (string) or nested object
+  // Normalise: instance token may be in `instance` as:
+  //   - a plain string (the auth token)
+  //   - an object { token: "...", id: "..." } (some server versions)
+  //   - an object { id: "..." } (fall back to id if token is absent)
   const rawInstance = raw['instance']
   const uazapiToken = typeof rawInstance === 'string'
     ? rawInstance
-    : (rawInstance as Record<string, unknown>)?.['token'] as string | undefined
+    : ((rawInstance as Record<string, unknown>)?.['token']
+      ?? (rawInstance as Record<string, unknown>)?.['id']) as string | undefined
 
   if (!uazapiToken) {
-    console.warn('[webhook] connection event missing instance token:', JSON.stringify(raw).slice(0, 200))
+    console.warn('[webhook] connection event missing instance token/id:', JSON.stringify(raw).slice(0, 300))
     return NextResponse.json({ received: true })
   }
+
+  console.log(`[webhook] connection event for token="${uazapiToken.slice(0, 12)}..."`)
+
 
   const rawData = (raw['data'] ?? {}) as Record<string, unknown>
   const status = rawData['status'] as InstanceStatus | undefined
@@ -79,6 +92,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   })
 
   if (!instance) {
+    // Token lookup failed — log token prefix to help diagnose mismatches
+    console.warn(`[webhook] No active instance found for token="${uazapiToken.slice(0, 12)}...". `
+      + 'Run "Sincronizar uazapiGO" to import missing tokens.')
     return NextResponse.json({ received: true })
   }
 

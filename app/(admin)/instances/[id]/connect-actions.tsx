@@ -3,9 +3,11 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Power, PowerOff, Key, Loader2, Copy, CheckCircle, RotateCcw } from 'lucide-react'
+import { Power, PowerOff, Key, Loader2, Copy, CheckCircle, RotateCcw, ArrowRight } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { QrDisplay } from '@/components/client/qr-display'
 import { PairingCodeDisplay } from '@/components/client/pairing-code-display'
 import { ConnectionStatus } from '@/components/client/connection-status'
@@ -31,11 +33,20 @@ export function InstanceConnectActions({
 }: InstanceConnectActionsProps) {
   const router = useRouter()
   const [connectMethod, setConnectMethod] = useState<ConnectMethod | null>(null)
+  // Phone number for pairing code mode — must be entered before requesting the code
+  const [pairPhone, setPairPhone] = useState('')
+  const [pairPhoneConfirmed, setPairPhoneConfirmed] = useState(false)
   const [reconnectToken, setReconnectToken] = useState<string | null>(null)
   const [tokenCopied, setTokenCopied] = useState(false)
   const [isDisconnecting, startDisconnect] = useTransition()
   const [isResetting, startReset] = useTransition()
   const [isGeneratingToken, startGenerateToken] = useTransition()
+
+  function handleBack() {
+    setConnectMethod(null)
+    setPairPhone('')
+    setPairPhoneConfirmed(false)
+  }
 
   async function handleDisconnect() {
     startDisconnect(async () => {
@@ -97,13 +108,13 @@ export function InstanceConnectActions({
     setTimeout(() => setTokenCopied(false), 2000)
   }
 
-  // If showing a connect method
+  // ── QR mode ─────────────────────────────────────────────────────────────────
   if (connectMethod === 'qr') {
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <p className="text-sm font-medium">Escanear QR Code</p>
-          <Button variant="ghost" size="sm" onClick={() => setConnectMethod(null)}>
+          <Button variant="ghost" size="sm" onClick={handleBack}>
             Voltar
           </Button>
         </div>
@@ -112,24 +123,72 @@ export function InstanceConnectActions({
     )
   }
 
-  if (connectMethod === 'pairing') {
+  // ── Pairing mode — step 1: enter phone ──────────────────────────────────────
+  if (connectMethod === 'pairing' && !pairPhoneConfirmed) {
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <p className="text-sm font-medium">Código de pareamento</p>
-          <Button variant="ghost" size="sm" onClick={() => setConnectMethod(null)}>
+          <Button variant="ghost" size="sm" onClick={handleBack}>
+            Voltar
+          </Button>
+        </div>
+
+        <div className="rounded-lg border border-border p-4 space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="pair-phone">Número de telefone do WhatsApp</Label>
+            <Input
+              id="pair-phone"
+              type="tel"
+              inputMode="numeric"
+              placeholder="5511999999999"
+              value={pairPhone}
+              onChange={(e) => setPairPhone(e.target.value.replace(/\D/g, ''))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && pairPhone.length >= 10) {
+                  setPairPhoneConfirmed(true)
+                }
+              }}
+              autoFocus
+            />
+            <p className="text-xs text-muted-foreground">
+              Número com DDI, sem espaços ou símbolos. Ex: 5511999999999
+            </p>
+          </div>
+
+          <Button
+            onClick={() => setPairPhoneConfirmed(true)}
+            disabled={pairPhone.length < 10}
+            className="gap-2"
+          >
+            <ArrowRight className="size-4" />
+            Gerar código
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Pairing mode — step 2: show code ────────────────────────────────────────
+  if (connectMethod === 'pairing' && pairPhoneConfirmed) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-medium">Código de pareamento</p>
+          <Button variant="ghost" size="sm" onClick={handleBack}>
             Voltar
           </Button>
         </div>
         <PairingCodeDisplay
           instanceId={instanceId}
           uazapiToken={uazapiToken}
-          phone=""
+          phone={pairPhone}
         />
       </div>
     )
   }
 
+  // ── Main view ────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6">
       {/* Current status */}
@@ -155,7 +214,7 @@ export function InstanceConnectActions({
               className="gap-2"
             >
               <Key className="size-4" />
-              Conectar via código de pareamento
+              Conectar via código
             </Button>
           </>
         )}

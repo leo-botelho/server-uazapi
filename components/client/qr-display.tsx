@@ -164,11 +164,19 @@ export function QrDisplay({ instanceId, uazapiToken }: QrDisplayProps) {
   }
 
   // displayState === 'qr'
+  // The uazapiGO API may return qrcode as a full data URL ("data:image/png;base64,...")
+  // or as raw base64. Normalize to always produce a valid src.
+  const qrSrc = qrBase64
+    ? qrBase64.startsWith('data:')
+      ? qrBase64
+      : `data:image/png;base64,${qrBase64}`
+    : null
+
   return (
     <div className="flex flex-col items-center gap-4">
-      {qrBase64 && (
+      {qrSrc && (
         <img
-          src={`data:image/png;base64,${qrBase64}`}
+          src={qrSrc}
           alt="QR Code do WhatsApp"
           className="size-56 rounded-lg border border-border"
         />
