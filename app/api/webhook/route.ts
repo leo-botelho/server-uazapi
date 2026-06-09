@@ -1,12 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { getInstanceClient } from '@/lib/api-helpers'
-import type { WebhookConnectionEvent, InstanceStatus } from '@/lib/uazapi/types'
+import type { InstanceStatus } from '@/lib/uazapi/types'
 import type { Json } from '@/types/database'
 import { randomBytes } from 'crypto'
 
 // Public endpoint — no auth, no middleware cookie handling.
 // uazapiGO must be able to reach this without credentials.
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Actual uazapiGO global webhook payload (confirmed via webhook.cool test):
+//
+// {
+//   "BaseUrl":      "https://smartskillshub.uazapi.com",
+//   "EventType":    "connection",          ← NOT "event"
+//   "token":        "814e3744-...",        ← instance auth token, top-level
+//   "owner":        "5521995474764",       ← phone number, top-level
+//   "instanceName": "bruna_lopes",
+//   "type":         "LoggedOut",           ← optional event subtype
+//   "instance": {                          ← object, NOT a string token
+//     "name":   "bruna_lopes",
+//     "status": "disconnected" | "connected" | "connecting",
+//     "qrcode": "data:image/png;base64,...",   ← when connecting
+//     "lastDisconnect":       "2026-06-09 ...", ← when disconnected
+//     "lastDisconnectReason": "401: ...",        ← when disconnected
+//   }
+// }
+// ─────────────────────────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   let body: unknown
@@ -23,49 +43,60 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const raw = body as Record<string, unknown>
 
-  // Log ALL incoming events (helps diagnose format/routing issues).
-  // Truncated to avoid flooding logs with message payloads.
-  const eventType = String(raw['event'] ?? 'unknown')
-  console.log(`[webhook] event="${eventType}" keys=${Object.keys(raw).join(',')}`
-    + ` payload=${JSON.stringify(raw).slice(0, 400)}`)
+  // ── Normalise event type ───────────────────────────────────────────────────
+  // Global webhook uses "EventType"; per-instance webhook (legacy) uses "event".
+  const eventType = String(
+    raw['EventType'] ?? raw['event'] ?? ''
+  ).toLowerCase()
 
-  // uazapiGO sends: { event, instance, data: { status, phone?, reason? } }
-  // Only process 'connection' events for status monitoring.
-  if (raw['event'] !== 'connection') {
+  console.log(
+    `[webhook] EventType="${eventType}" keys=${Object.keys(raw).join(',')} ` +
+    `token="${String(raw['token'] ?? '').slice(0, 8)}..." ` +
+    `instanceStatus="${(raw['instance'] as Record<string, unknown>)?.['status'] ?? '?'}"`
+  )
+
+  // Only care about connection events for status monitoring.
+  if (eventType !== 'connection') {
     return NextResponse.json({ received: true })
   }
 
-  // Normalise: instance token may be in `instance` as:
-  //   - a plain string (the auth token)
-  //   - an object { token: "...", id: "..." } (some server versions)
-  //   - an object { id: "..." } (fall back to id if token is absent)
+  // ── Extract instance auth token ────────────────────────────────────────────
+  // Global format: top-level "token" field.
+  // Legacy per-instance format: "instance" field as string or { token, id }.
   const rawInstance = raw['instance']
-  const uazapiToken = typeof rawInstance === 'string'
-    ? rawInstance
-    : ((rawInstance as Record<string, unknown>)?.['token']
-      ?? (rawInstance as Record<string, unknown>)?.['id']) as string | undefined
+  const uazapiToken: string | undefined =
+    typeof raw['token'] === 'string' && raw['token'].trim()
+      ? (raw['token'] as string)
+      : typeof rawInstance === 'string' && rawInstance.trim()
+        ? rawInstance
+        : typeof rawInstance === 'object' && rawInstance !== null
+          ? (
+              ((rawInstance as Record<string, unknown>)['token'] as string | undefined) ??
+              ((rawInstance as Record<string, unknown>)['id']    as string | undefined)
+            )
+          : undefined
 
   if (!uazapiToken) {
-    console.warn('[webhook] connection event missing instance token/id:', JSON.stringify(raw).slice(0, 300))
+    console.warn('[webhook] connection event missing token:', JSON.stringify(raw).slice(0, 300))
     return NextResponse.json({ received: true })
   }
 
-  console.log(`[webhook] connection event for token="${uazapiToken.slice(0, 12)}..."`)
+  // ── Extract status, phone, reason ─────────────────────────────────────────
+  // Global format: instance.status, owner (top-level), instance.lastDisconnectReason
+  // Legacy format: data.status, data.phone, data.reason
+  const instanceObj   = (typeof rawInstance === 'object' && rawInstance !== null ? rawInstance : {}) as Record<string, unknown>
+  const rawData       = (raw['data'] ?? {}) as Record<string, unknown>
 
+  const status = (instanceObj['status'] ?? rawData['status']) as InstanceStatus | undefined
+  const phone  = typeof raw['owner'] === 'string' ? raw['owner']
+               : typeof rawData['phone'] === 'string' ? rawData['phone']
+               : undefined
+  const reason = typeof instanceObj['lastDisconnectReason'] === 'string' ? instanceObj['lastDisconnectReason']
+               : typeof raw['type'] === 'string' ? raw['type']
+               : typeof rawData['reason'] === 'string' ? rawData['reason']
+               : undefined
 
-  const rawData = (raw['data'] ?? {}) as Record<string, unknown>
-  const status = rawData['status'] as InstanceStatus | undefined
-  const phone  = typeof rawData['phone']  === 'string' ? rawData['phone']  : undefined
-  const reason = typeof rawData['reason'] === 'string' ? rawData['reason'] : undefined
-
-  // Re-create typed event for downstream use
-  const event: WebhookConnectionEvent = {
-    event: 'connection',
-    instance: uazapiToken,
-    data: { status: status ?? 'disconnected', phone, reason },
-  }
-
-  void reason // used only in payload log
+  void reason
 
   const supabase = await createServiceClient()
 
@@ -82,34 +113,42 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ received: true })
   }
 
-  // 2. Log the raw event
+  // 2. Log the raw event (always, even when instance not found)
   await supabase.from('webhook_events').insert({
     instance_id: instance?.id ?? null,
-    event_type: event.event,
+    event_type: 'connection',
     payload: body as Json,
   }).then(({ error }) => {
     if (error) console.error('[webhook] Failed to log event:', error.message)
   })
 
   if (!instance) {
-    // Token lookup failed — log token prefix to help diagnose mismatches
-    console.warn(`[webhook] No active instance found for token="${uazapiToken.slice(0, 12)}...". `
-      + 'Run "Sincronizar uazapiGO" to import missing tokens.')
+    console.warn(
+      `[webhook] No active instance for token="${uazapiToken.slice(0, 12)}...". ` +
+      'Run "Sincronizar uazapiGO" to import the token.'
+    )
     return NextResponse.json({ received: true })
   }
 
-  // 3. Update instance status
-  const updatePayload: {
-    status: typeof status
+  console.log(`[webhook] Updating instance "${instance.name}" status: ${instance.status} → ${status}`)
+
+  // 3. Update instance status in DB
+  type UpdatePayload = {
+    status: InstanceStatus | undefined
     phone_connected?: string | null
     last_disconnected_at?: string
-  } = { status }
+  }
 
-  if (phone) {
-    updatePayload.phone_connected = phone
+  const updatePayload: UpdatePayload = { status }
+
+  if (status === 'connected') {
+    // Store connected phone (owner) — clear last_disconnected_at implicitly via status
+    if (phone) updatePayload.phone_connected = phone
   } else if (status === 'disconnected') {
+    updatePayload.phone_connected = null
     updatePayload.last_disconnected_at = new Date().toISOString()
   }
+  // status === 'connecting': no phone change needed
 
   await supabase
     .from('instances')
@@ -117,10 +156,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     .eq('id', instance.id)
     .then(({ error }) => {
       if (error) console.error('[webhook] Failed to update instance status:', error.message)
+      else console.log(`[webhook] Instance "${instance.name}" updated to "${status}"`)
     })
 
-  // 4. Trigger notification if just disconnected
+  // 4. Fire disconnect notification only when transitioning connected → disconnected
   if (status === 'disconnected' && instance.status !== 'disconnected') {
+    console.log(`[webhook] Triggering disconnect notification for "${instance.name}"`)
     sendDisconnectNotification(supabase, instance).catch((err: unknown) => {
       console.error('[webhook] Notification error:', err instanceof Error ? err.message : String(err))
     })
@@ -148,12 +189,12 @@ async function sendDisconnectNotification(
   instance: InstanceRow
 ): Promise<void> {
   const channel = instance.alert_channel ?? 'none'
-  if (channel === 'none' || channel === 'email') return  // email not implemented yet
+  if (channel === 'none' || channel === 'email') return
 
   // Check silence window (UTC hours)
   const currentHour = new Date().getUTCHours()
   const silenceStart = instance.silence_start ?? 23
-  const silenceEnd = instance.silence_end ?? 7
+  const silenceEnd   = instance.silence_end   ?? 7
 
   if (isInSilenceWindow(currentHour, silenceStart, silenceEnd)) {
     console.log(`[notify] Silence window active (${silenceStart}h–${silenceEnd}h UTC), skipping`)
@@ -171,8 +212,8 @@ async function sendDisconnectNotification(
     if (client?.name) clientName = client.name
   }
 
-  // Generate a reconnect token valid for 24h
-  const token = randomBytes(32).toString('hex')
+  // Generate reconnect token valid for 24h
+  const token     = randomBytes(32).toString('hex')
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
 
   await supabase.from('reconnect_tokens').insert({
@@ -181,12 +222,11 @@ async function sendDisconnectNotification(
     expires_at: expiresAt,
   })
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const appUrl       = process.env.NEXT_PUBLIC_APP_URL ?? ''
   const reconnectUrl = `${appUrl}/connect/${token}`
 
-  // Use custom template if configured, otherwise fall back to default.
-  // Template variables: {clientName}, {instanceName}, {reconnectUrl}
-  const config = (instance.alert_config ?? {}) as Record<string, unknown>
+  // Use custom template from alert_config.message_template, or default
+  const config         = (instance.alert_config ?? {}) as Record<string, unknown>
   const customTemplate = typeof config['message_template'] === 'string' && config['message_template'].trim()
     ? config['message_template'].trim()
     : null
@@ -199,7 +239,7 @@ async function sendDisconnectNotification(
     `_Link válido por 24 horas._`
 
   const message = messageTemplate
-    .replace(/\{clientName\}/g, clientName)
+    .replace(/\{clientName\}/g,   clientName)
     .replace(/\{instanceName\}/g, instance.name)
     .replace(/\{reconnectUrl\}/g, reconnectUrl)
 
@@ -212,9 +252,9 @@ async function sendDisconnectNotification(
       notifStatus = 'sent'
     } else if (channel === 'n8n') {
       await sendN8nNotification(instance, {
-        event: 'disconnected',
-        instanceId: instance.id,
-        instanceName: instance.name,
+        event:         'disconnected',
+        instanceId:    instance.id,
+        instanceName:  instance.name,
         clientName,
         reconnectUrl,
       })
@@ -225,12 +265,11 @@ async function sendDisconnectNotification(
     console.error(`[notify] ${channel} send failed:`, notifError)
   }
 
-  // Log the notification attempt
   await supabase.from('notifications_log').insert({
     instance_id: instance.id,
     channel,
-    status: notifStatus,
-    error: notifError,
+    status:  notifStatus,
+    error:   notifError,
     sent_at: notifStatus === 'sent' ? new Date().toISOString() : null,
   })
 }
@@ -239,17 +278,12 @@ async function sendDisconnectNotification(
 // Channel helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function sendWhatsAppNotification(
-  instance: InstanceRow,
-  message: string
-): Promise<void> {
-  const config = (instance.alert_config ?? {}) as Record<string, unknown>
-  const to = typeof config['to'] === 'string' ? config['to'] : null
-  const fromInstanceId = typeof config['from_instance_id'] === 'string'
-    ? config['from_instance_id']
-    : null
+async function sendWhatsAppNotification(instance: InstanceRow, message: string): Promise<void> {
+  const config         = (instance.alert_config ?? {}) as Record<string, unknown>
+  const to             = typeof config['to'] === 'string' ? config['to'] : null
+  const fromInstanceId = typeof config['from_instance_id'] === 'string' ? config['from_instance_id'] : null
 
-  if (!to) throw new Error('alert_config.to is not configured for WhatsApp channel')
+  if (!to)             throw new Error('alert_config.to is not configured for WhatsApp channel')
   if (!fromInstanceId) throw new Error('alert_config.from_instance_id is not configured for WhatsApp channel')
 
   const clientResult = await getInstanceClient(fromInstanceId)
@@ -264,7 +298,7 @@ async function sendN8nNotification(
   payload: Record<string, unknown>
 ): Promise<void> {
   const config = (instance.alert_config ?? {}) as Record<string, unknown>
-  const url = typeof config['url'] === 'string' ? config['url'] : null
+  const url    = typeof config['url'] === 'string' ? config['url'] : null
 
   if (!url) throw new Error('alert_config.url is not configured for n8n channel')
 
@@ -280,14 +314,9 @@ async function sendN8nNotification(
   }
 }
 
-// Returns true if the current hour is inside the silence window.
-// Handles windows that wrap midnight (e.g., 23h–7h).
+// Returns true if hour is inside the silence window (handles midnight wrap).
 function isInSilenceWindow(hour: number, start: number, end: number): boolean {
   if (start === end) return false
-  if (start > end) {
-    // Wraps midnight: e.g. 23h–7h → silent from 23 to 23:59 AND 0 to 6
-    return hour >= start || hour < end
-  }
-  // Same-day window: e.g. 13h–15h
-  return hour >= start && hour < end
+  if (start > end)   return hour >= start || hour < end   // e.g. 23h–7h
+  return hour >= start && hour < end                       // e.g. 13h–15h
 }

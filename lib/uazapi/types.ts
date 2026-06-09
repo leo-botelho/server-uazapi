@@ -109,11 +109,29 @@ export interface ProxyCity {
   state?: string   // send this in proxy_managed_state when present, e.g. "sp"
 }
 
+/**
+ * Actual payload format sent by uazapiGO global webhook (confirmed via webhook.cool).
+ * Note: "event" vs "EventType" — global webhook uses EventType (capital letters).
+ */
 export interface WebhookConnectionEvent {
-  event: 'connection'
-  instance: string  // instance token
-  data: {
-    status: InstanceStatus
+  // Global webhook format (primary)
+  EventType?: 'connection'
+  BaseUrl?: string
+  token?: string        // instance auth token (top-level in global format)
+  owner?: string        // connected phone number
+  instanceName?: string
+  type?: string         // e.g. "LoggedOut"
+  instance?: {
+    name?: string
+    status?: InstanceStatus
+    qrcode?: string
+    lastDisconnect?: string
+    lastDisconnectReason?: string
+  }
+  // Legacy per-instance format (fallback)
+  event?: 'connection'
+  data?: {
+    status?: InstanceStatus
     phone?: string
     reason?: string
   }
