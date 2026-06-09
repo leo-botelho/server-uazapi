@@ -111,9 +111,12 @@ export function ProxyCitySelect({
         <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2.5 text-sm text-muted-foreground">
           <WifiOff className="size-3.5 shrink-0" />
           <span>
-            Proxy gerenciado não disponível neste servidor.{' '}
-            <span className="text-xs">
-              Verifique a URL e o token na página de Perfil.
+            {fetchError
+              ? 'Seleção de cidade não disponível neste servidor uazapiGO.'
+              : 'Nenhuma cidade disponível neste servidor.'}
+            {' '}
+            <span className="text-xs opacity-70">
+              Este recurso é opcional e não afeta a conectividade da instância.
             </span>
           </span>
         </div>

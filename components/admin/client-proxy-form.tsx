@@ -47,7 +47,7 @@ export function ClientProxyForm({ clientId, initialCity, initialState }: ClientP
 
       if (!res.ok) {
         const data = (await res.json()) as { error?: string }
-        toast.error(data.error ?? 'Erro ao salvar cidade do proxy')
+        toast.error(data.error ?? 'Erro ao salvar cidade de conexão')
         return
       }
 
@@ -57,10 +57,10 @@ export function ClientProxyForm({ clientId, initialCity, initialState }: ClientP
 
       if (selected) {
         toast.success(
-          `Proxy configurado: ${selected.label}${selected.state ? ` — ${selected.state.toUpperCase()}` : ''}`
+          `Cidade configurada: ${selected.label}${selected.state ? ` — ${selected.state.toUpperCase()}` : ''}`
         )
       } else {
-        toast.success('Proxy de cidade removido')
+        toast.success('Cidade de conexão removida')
       }
     })
   }
@@ -76,7 +76,7 @@ export function ClientProxyForm({ clientId, initialCity, initialState }: ClientP
 
       if (!res.ok) {
         const data = (await res.json()) as { error?: string }
-        toast.error(data.error ?? 'Erro ao remover proxy')
+        toast.error(data.error ?? 'Erro ao remover cidade de conexão')
         // restore previous selection on failure
         setSelected(
           pending.city
@@ -87,7 +87,7 @@ export function ClientProxyForm({ clientId, initialCity, initialState }: ClientP
       }
 
       setPending({ city: null, state: null })
-      toast.success('Proxy de cidade removido')
+      toast.success('Cidade de conexão removida')
     })
   }
 
@@ -96,8 +96,8 @@ export function ClientProxyForm({ clientId, initialCity, initialState }: ClientP
       <div className="flex items-start gap-2 text-sm text-muted-foreground">
         <MapPin className="size-4 shrink-0 mt-0.5" />
         <span>
-          Toda vez que a instância deste cliente for conectada, a cidade de conexão selecionada
-          será usada automaticamente para maior estabilidade.
+          Selecione a cidade do cliente para melhorar a estabilidade da conexão WhatsApp.
+          Salva uma vez — aplicada automaticamente em toda reconexão.
         </span>
       </div>
 
@@ -139,7 +139,7 @@ export function ClientProxyForm({ clientId, initialCity, initialState }: ClientP
       <p className="text-xs text-muted-foreground">
         {pending.city ? (
           <>
-            Configurada atualmente:{' '}
+            Cidade salva:{' '}
             <span className="font-medium text-foreground">
               {pending.city.charAt(0).toUpperCase() + pending.city.slice(1)}
               {pending.state ? ` — ${pending.state.toUpperCase()}` : ''}

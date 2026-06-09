@@ -92,12 +92,13 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
         </Card>
       </div>
 
-      {/* Proxy de conexão */}
+      {/* Cidade de conexão */}
       <Card>
         <CardHeader>
-          <CardTitle>Proxy de Conexão</CardTitle>
+          <CardTitle>Cidade de Conexão</CardTitle>
           <CardDescription>
-            Cidade usada para o proxy gerenciado do uazapiGO — aplicado automaticamente em toda reconexão
+            Quando disponível, a instância usa um IP da cidade selecionada para maior estabilidade.
+            Configurado uma vez e aplicado automaticamente a cada reconexão.
           </CardDescription>
         </CardHeader>
         <CardContent>
