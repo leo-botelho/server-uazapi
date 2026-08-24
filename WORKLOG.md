@@ -5,6 +5,57 @@ Registrar aqui toda implementação, fix e decisão técnica relevante ao final 
 
 ---
 
+## 2026-08-24 — Implementacao das melhorias da auditoria
+
+Todos os itens levantados na auditoria (entrada abaixo) foram implementados em dois commits.
+
+### Confiabilidade (commit 757f0c0)
+- **hibernated**: migration 009 amplia o CHECK; `InstanceStatus` ganha o estado; badge laranja
+  "Hibernada" na UI. Tipos duplicados de status em 4 arquivos foram unificados em `lib/uazapi/types`.
+- **Monitor ativo** (`app/api/monitor/tick`): reconcilia via `/instance/all` em todos os servidores,
+  alerta nas transicoes, reenvia pendentes, faz watchdog do webhook e aplica retencao.
+  Protegido por `MONITOR_SECRET` (header `x-monitor-secret` ou query `?secret=`).
+  Agendado por `.github/workflows/monitor.yml` a cada 5 min — Cron Trigger do Cloudflare NAO
+  funciona porque o worker do OpenNext so exporta `fetch`
+  (`node_modules/@opennextjs/cloudflare/dist/cli/templates/worker.js:15`).
+- **lib/notifications.ts**: modulo compartilhado entre webhook e monitor. `after()` do next/server
+  (equivalente a waitUntil), janela de silencio que ADIA em vez de descartar, cooldown de 30min,
+  guarda de transicao correta, `recipient` gravado, remetente WhatsApp validado, token de
+  reconexao reaproveitado.
+- **Webhook**: valida status antes de gravar, compare-and-set contra corrida, 500 em erro de banco
+  (para o uazapiGO fazer retry).
+- **Portal do cliente**: `/api/connect/status` confirma na API quando o dado esta velho; queima os
+  tokens ao conectar; `uazapi_token` nao vaza mais para client components.
+- Timeout de 15s no client uazapi; contagem honesta no sync; multi-servidor em disconnect/delete/
+  rename; canal `email` removido da API; Edge Function `notify-disconnect` deletada.
+
+### Diagnostico (commit desta entrada)
+- `GET /api/instances/[id]/health` — agrega 5 leituras em paralelo, cada secao isolada em
+  `{data,error}` para que uma falha nao derrube o resto.
+- Aba **Diagnostico** na pagina da instancia: cota de novas conversas (bloqueio 463), webhook do
+  agente (somente leitura), proxy (intencao vs realidade + botao rotacionar IP) e fila de envio.
+- Card **Saude do webhook global** em `/settings` (`GET /globalwebhook/errors`).
+- `POST /api/instances/[id]/proxy` — unica escrita nova, e nao toca em webhook algum.
+
+### Verificacao feita
+- `npx tsc --noEmit` limpo. Lint mantido nos 12 erros pre-existentes (nenhum novo).
+- Dev server: `/connect` renderiza sem erro de console apos as mudancas de props.
+- `POST /api/monitor/tick` testado: 401 sem secret, 401 com secret errado, e com secret correto
+  retorna o resumo estruturado degradando com elegancia quando o servidor uazapi esta inacessivel.
+- Webhook testado: 400 em JSON invalido, 200 em evento nao-connection, 200 sem token.
+- ⚠️ `npm run build` local falha com `write EOF` (Turbopack no Windows). **Pre-existente**:
+  reproduzido identico no commit 1b988b6, sem nenhuma mudanca. O deploy roda no Ubuntu e passa.
+
+### Acao manual necessaria antes de tudo funcionar
+1. Aplicar a migration 009 no Supabase.
+2. Criar os secrets no GitHub: `MONITOR_SECRET` (valor novo, aleatorio) e `MONITOR_URL`
+   (`https://server.smartskillshub.com.br/api/monitor/tick`). Conferir que `NEXT_PUBLIC_APP_URL`
+   existe — o deploy agora a envia como runtime secret.
+3. Em `/settings`, salvar o webhook global apontando para
+   `https://server.smartskillshub.com.br/api/webhook` com o evento `connection`.
+
+---
+
 ## 2026-08-24 — Auditoria completa: backlog priorizado
 
 Levantamento feito sobre o código + spec uazapiGO v2.1.1. Detalhe de cada item com arquivo:linha

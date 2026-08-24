@@ -15,6 +15,7 @@ import { InstanceConnectActions } from './connect-actions'
 import { LinkClientForm } from './link-client-form'
 import { AlertConfigForm } from './alert-config-form'
 import { TokenForm } from './token-form'
+import { InstanceHealthPanel } from './health-panel'
 import { formatDistanceToNow } from 'date-fns'
 import { ArrowLeft } from 'lucide-react'
 import type { Json } from '@/types/database'
@@ -104,6 +105,7 @@ export default async function InstanceDetailPage({
         <TabsList>
           <TabsTrigger value="overview">Visão geral</TabsTrigger>
           <TabsTrigger value="connection">Conexão</TabsTrigger>
+          <TabsTrigger value="health">Diagnóstico</TabsTrigger>
           <TabsTrigger value="alerts">Alertas</TabsTrigger>
           <TabsTrigger value="logs">Logs</TabsTrigger>
         </TabsList>
@@ -241,6 +243,22 @@ export default async function InstanceDetailPage({
                 instanceId={instance.id}
                 currentToken={instance.uazapi_token}
               />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Diagnóstico — sinais lidos direto do uazapiGO, sem alterar nada */}
+        <TabsContent value="health" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Diagnóstico da instância</CardTitle>
+              <CardDescription>
+                Cota de novas conversas, webhook do agente, proxy e fila de envio —
+                sinais que revelam problema antes do cliente reclamar
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <InstanceHealthPanel instanceId={instance.id} />
             </CardContent>
           </Card>
         </TabsContent>

@@ -1,6 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Settings, ExternalLink, Info, Globe } from 'lucide-react'
+import { Settings, ExternalLink, Info, Globe, HeartPulse } from 'lucide-react'
 import { GlobalWebhookForm } from './global-webhook-form'
+import { GlobalWebhookHealth } from './webhook-health'
 
 function maskValue(value: string | undefined): string {
   if (!value) return '(não definido)'
@@ -40,6 +41,23 @@ export default function SettingsPage() {
         </CardHeader>
         <CardContent>
           <GlobalWebhookForm />
+        </CardContent>
+      </Card>
+
+      {/* Saúde da entrega — mostra se o canal que alimenta o painel está falhando */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <HeartPulse className="size-5 text-muted-foreground" />
+            <CardTitle>Saúde do webhook global</CardTitle>
+          </div>
+          <CardDescription>
+            Este é o canal que mantém o status das instâncias atualizado. Se ele estiver
+            falhando, o painel depende apenas do monitor ativo para detectar quedas.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <GlobalWebhookHealth />
         </CardContent>
       </Card>
 
@@ -96,6 +114,18 @@ export default function SettingsPage() {
                     {
                       name: 'UAZAPI_ADMIN_TOKEN',
                       value: process.env.UAZAPI_ADMIN_TOKEN,
+                      public: false,
+                    },
+                    {
+                      // Sem ela o link de reconexão enviado ao cliente sai relativo e quebrado.
+                      name: 'NEXT_PUBLIC_APP_URL',
+                      value: process.env.NEXT_PUBLIC_APP_URL,
+                      public: true,
+                    },
+                    {
+                      // Protege POST /api/monitor/tick (monitor ativo).
+                      name: 'MONITOR_SECRET',
+                      value: process.env.MONITOR_SECRET,
                       public: false,
                     },
                   ].map(({ name, value, public: isPublic }) => (
