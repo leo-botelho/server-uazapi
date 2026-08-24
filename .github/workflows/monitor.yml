@@ -42,11 +42,25 @@ jobs:
             exit 1
           fi
 
+          # Remove espacos, CR e LF dos secrets: um valor colado com quebra de
+          # linha no final vira um header HTTP invalido e o curl aborta com
+          # "(43) Failed sending HTTP request" antes de tentar a conexao.
+          url=$(printf '%s' "$MONITOR_URL"    | tr -d '[:space:]')
+          key=$(printf '%s' "$MONITOR_SECRET" | tr -d '[:space:]')
+
+          # Diagnostico sem expor os valores.
+          echo "Tamanho do secret: ${#key} caracteres"
+
+          case "$url" in
+            https://*) ;;
+            *) echo "::error::MONITOR_URL precisa comecar com https://"; exit 1 ;;
+          esac
+
           response=$(mktemp)
           code=$(curl -sS -o "$response" -w '%{http_code}' \
             --max-time 120 \
-            -X POST "$MONITOR_URL" \
-            -H "x-monitor-secret: $MONITOR_SECRET")
+            -X POST "$url" \
+            -H "x-monitor-secret: $key")
 
           echo "HTTP $code"
           cat "$response"
