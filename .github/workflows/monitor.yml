@@ -49,7 +49,9 @@ jobs:
           key=$(printf '%s' "$MONITOR_SECRET" | tr -d '[:space:]')
 
           # Diagnostico sem expor os valores.
+          echo "Host alvo: $(printf %s "$url" | cut -d/ -f1-3)"
           echo "Tamanho do secret: ${#key} caracteres"
+          echo "Impressao digital enviada: $(printf %s "$key" | sha256sum | cut -c1-8)"
 
           case "$url" in
             https://*) ;;

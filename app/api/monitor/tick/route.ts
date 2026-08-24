@@ -63,7 +63,18 @@ async function runTick(request: NextRequest): Promise<NextResponse> {
   ).trim()
 
   if (provided !== expected) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Diagnostico: compara impressoes digitais em vez dos valores. Oito hex
+    // de um SHA-256 nao permitem recuperar o secret, mas mostram na hora se
+    // o agendador e o Worker estao com valores diferentes.
+    const [fpExpected, fpProvided] = await Promise.all([
+      fingerprint(expected),
+      fingerprint(provided),
+    ])
+    console.warn(`[monitor] 401 — esperado ${fpExpected} recebido ${fpProvided}`)
+    return NextResponse.json(
+      { error: 'Unauthorized', expectedFingerprint: fpExpected, providedFingerprint: fpProvided },
+      { status: 401 }
+    )
   }
 
   const startedAt = Date.now()
@@ -142,6 +153,12 @@ async function runTick(request: NextRequest): Promise<NextResponse> {
   console.log('[monitor] tick:', JSON.stringify(summary))
 
   return NextResponse.json(summary, { status: errors.length ? 207 : 200 })
+}
+
+/** Oito primeiros hex do SHA-256 — identifica o valor sem revela-lo. */
+async function fingerprint(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
+  return [...new Uint8Array(digest)].slice(0, 4).map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
