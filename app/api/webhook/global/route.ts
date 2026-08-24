@@ -10,8 +10,11 @@ export async function GET(_request: NextRequest): Promise<NextResponse> {
   const adminClient = await getAdminClient()
 
   try {
-    const config = await adminClient.getGlobalWebhook()
-    return NextResponse.json(config)
+    const configs = await adminClient.getGlobalWebhook()
+    if (configs.length > 1) {
+      console.warn(`[webhook/global GET] server has ${configs.length} global webhooks; returning the first`)
+    }
+    return NextResponse.json(configs[0] ?? null)
   } catch (err) {
     const message = err instanceof Error ? err.message : ''
     // 404 = ainda não configurado — retorna null para que o formulário mostre estado vazio
@@ -57,11 +60,31 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const adminClient = await getAdminClient()
 
   try {
-    const result = await adminClient.setGlobalWebhook(config)
-    return NextResponse.json(result)
+    await adminClient.setGlobalWebhook(config)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     console.error('[webhook/global POST] error:', message)
     return NextResponse.json({ error: message }, { status: 502 })
   }
+
+  // Verify what the server actually persisted — some uazapiGO builds ignore
+  // the (undocumented) `enabled` field on POST /globalwebhook and keep the
+  // webhook disabled, which silently breaks status monitoring.
+  let saved: Awaited<ReturnType<typeof adminClient.getGlobalWebhook>>[number] | null = null
+  try {
+    const configs = await adminClient.getGlobalWebhook()
+    saved = configs[0] ?? null
+  } catch (err) {
+    console.warn('[webhook/global POST] verification GET failed:',
+      err instanceof Error ? err.message : String(err))
+  }
+
+  const warning =
+    saved && saved.enabled === false
+      ? 'O servidor salvou o webhook, mas ele continua DESATIVADO (enabled: false). ' +
+        'O uazapiGO não vai entregar eventos até que ele seja ativado — verifique erros de ' +
+        'entrega em GET /globalwebhook/errors ou ative manualmente no servidor.'
+      : undefined
+
+  return NextResponse.json({ config: saved, warning })
 }

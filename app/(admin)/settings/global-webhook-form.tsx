@@ -117,9 +117,16 @@ export function GlobalWebhookForm() {
           throw new Error(data.error ?? 'Erro ao salvar webhook global')
         }
 
-        const result = (await res.json()) as GlobalWebhookResponse
-        setCurrent(result)
-        toast.success('Webhook global configurado com sucesso!')
+        const result = (await res.json()) as {
+          config: GlobalWebhookResponse | null
+          warning?: string
+        }
+        setCurrent(result.config)
+        if (result.warning) {
+          toast.warning(result.warning, { duration: 12000 })
+        } else {
+          toast.success('Webhook global configurado e ativo!')
+        }
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Erro ao salvar webhook global')
       }
@@ -136,7 +143,8 @@ export function GlobalWebhookForm() {
   }
 
   const isConfigured = !!(current?.url)
-  const isEnabled    = current?.enabled !== false  // treat undefined as enabled
+  // Only an explicit `enabled: true` counts — the server default is false.
+  const isEnabled    = current?.enabled === true
 
   return (
     <div className="space-y-6">

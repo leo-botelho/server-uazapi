@@ -101,13 +101,10 @@ function createUazapiClient(baseUrl: string, defaultAdminToken: string) {
     getCities: (country = 'br') =>
       request<ProxyCity[]>(`/proxy-managed/cities?country=${country}`),
 
-    // Webhook configuration
-    setWebhook: (token: string, url: string, events: string[]) =>
-      request<void>('/webhook', {
-        method: 'POST',
-        token,
-        body: JSON.stringify({ url, events }),
-      }),
+    // ⚠️ NUNCA adicionar um método de escrita em POST /webhook (por instância).
+    // Os webhooks individuais pertencem aos agentes de IA no n8n — cada instância
+    // tem uma URL única cadastrada lá. Sobrescrevê-los derruba o agente do cliente.
+    // O painel só usa o webhook GLOBAL (abaixo) para eventos `connection`.
 
     // Send text message — used internally for WhatsApp disconnect alerts
     sendText: (token: string, to: string, text: string) =>
@@ -119,16 +116,28 @@ function createUazapiClient(baseUrl: string, defaultAdminToken: string) {
 
     // ─── Global Webhook — uses admintoken, no instance token ──────────────
 
-    /** GET /globalwebhook — read current global webhook config */
-    getGlobalWebhook: () =>
-      request<GlobalWebhookResponse>('/globalwebhook'),
+    /**
+     * GET /globalwebhook — read current global webhook config.
+     * Older uazapiGO builds return a single object; newer builds return an
+     * array of webhooks. Always normalised to an array here.
+     */
+    getGlobalWebhook: async (): Promise<GlobalWebhookResponse[]> => {
+      const raw = await request<GlobalWebhookResponse | GlobalWebhookResponse[]>('/globalwebhook')
+      if (Array.isArray(raw)) return raw
+      if (raw && typeof raw === 'object' && Object.keys(raw).length > 0) return [raw]
+      return []
+    },
 
-    /** POST /globalwebhook — create or update the global webhook */
-    setGlobalWebhook: (config: GlobalWebhookConfig) =>
-      request<GlobalWebhookResponse>('/globalwebhook', {
+    /** POST /globalwebhook — create or update the global webhook (normalised to array) */
+    setGlobalWebhook: async (config: GlobalWebhookConfig): Promise<GlobalWebhookResponse[]> => {
+      const raw = await request<GlobalWebhookResponse | GlobalWebhookResponse[]>('/globalwebhook', {
         method: 'POST',
         body: JSON.stringify(config),
-      }),
+      })
+      if (Array.isArray(raw)) return raw
+      if (raw && typeof raw === 'object' && Object.keys(raw).length > 0) return [raw]
+      return []
+    },
   }
 }
 

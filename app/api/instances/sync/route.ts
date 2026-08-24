@@ -10,7 +10,10 @@ import type { InstanceStatus } from '@/lib/uazapi/types'
  *  - Inserts instances not yet tracked in the database.
  *  - Repairs existing instances whose uazapi_token was stored incorrectly.
  *  - Updates status, phone, profile for ALL already-synced instances.
- *  - Configures webhooks on ALL instances (idempotent).
+ *
+ * Este endpoint NÃO configura webhooks — nem globais nem por instância.
+ * Os webhooks por instância pertencem aos agentes de IA (n8n) e jamais devem
+ * ser alterados pelo painel (removido no commit 283523d após incidente).
  *
  * Returns { imported, repaired, updated, skipped, total }
  */
