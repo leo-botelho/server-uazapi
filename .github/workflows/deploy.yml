@@ -3,6 +3,9 @@ name: Deploy to Cloudflare Workers
 on:
   push:
     branches: [main]
+  # Permite redeploy manual pela aba Actions — necessario, por exemplo, quando um
+  # secret novo e adicionado e precisa chegar ao Worker sem um commit novo.
+  workflow_dispatch:
 
 jobs:
   deploy:
