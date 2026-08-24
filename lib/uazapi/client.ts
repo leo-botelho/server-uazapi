@@ -210,14 +210,16 @@ function createUazapiClient(baseUrl: string, defaultAdminToken: string) {
 }
 
 // Default client using env vars (fallback for server-side usage without DB lookup)
-const defaultBaseUrl = process.env.UAZAPI_BASE_URL ?? 'https://free.uazapi.com'
-const defaultAdminToken = process.env.UAZAPI_ADMIN_TOKEN ?? ''
+// `.trim()` porque um secret gravado via `echo` carrega uma quebra de linha no
+// fim — isso quebra a URL base e torna o header `admintoken` invalido.
+const defaultBaseUrl = (process.env.UAZAPI_BASE_URL ?? 'https://free.uazapi.com').trim().replace(/\/$/, '')
+const defaultAdminToken = (process.env.UAZAPI_ADMIN_TOKEN ?? '').trim()
 
 export const uazapi = createUazapiClient(defaultBaseUrl, defaultAdminToken)
 
 // Factory: create a client bound to a specific server's URL and admin token
 export function createUazapi(serverUrl: string, adminToken: string) {
-  return createUazapiClient(serverUrl, adminToken)
+  return createUazapiClient(serverUrl.trim().replace(/\/$/, ''), adminToken.trim())
 }
 
 export type UazapiClient = ReturnType<typeof createUazapiClient>

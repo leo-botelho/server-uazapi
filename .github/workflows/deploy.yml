@@ -41,14 +41,14 @@ jobs:
 
       - name: Set Cloudflare Worker runtime secrets
         run: |
-          echo "${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" | npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
-          echo "${{ secrets.UAZAPI_BASE_URL }}" | npx wrangler secret put UAZAPI_BASE_URL
-          echo "${{ secrets.UAZAPI_ADMIN_TOKEN }}" | npx wrangler secret put UAZAPI_ADMIN_TOKEN
+          printf '%s' "${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" | npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+          printf '%s' "${{ secrets.UAZAPI_BASE_URL }}" | npx wrangler secret put UAZAPI_BASE_URL
+          printf '%s' "${{ secrets.UAZAPI_ADMIN_TOKEN }}" | npx wrangler secret put UAZAPI_ADMIN_TOKEN
           # Usada em runtime para montar o link de reconexao enviado ao cliente.
           # Sem ela o link sai relativo e o cliente recebe uma URL quebrada.
-          echo "${{ secrets.NEXT_PUBLIC_APP_URL }}" | npx wrangler secret put NEXT_PUBLIC_APP_URL
+          printf '%s' "${{ secrets.NEXT_PUBLIC_APP_URL }}" | npx wrangler secret put NEXT_PUBLIC_APP_URL
           # Protege POST /api/monitor/tick (monitor ativo).
-          echo "${{ secrets.MONITOR_SECRET }}" | npx wrangler secret put MONITOR_SECRET
+          printf '%s' "${{ secrets.MONITOR_SECRET }}" | npx wrangler secret put MONITOR_SECRET
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

@@ -384,7 +384,7 @@ async function hasRecentAlert(supabase: SupabaseService, instanceId: string): Pr
  * funcional na mão do cliente.
  */
 async function buildReconnectUrl(supabase: SupabaseService, instanceId: string): Promise<string | null> {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '')
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, '')
   if (!appUrl) {
     console.error('[notify] NEXT_PUBLIC_APP_URL ausente — não é possível montar o link de reconexão')
     return null

@@ -43,7 +43,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 }
 
 async function runTick(request: NextRequest): Promise<NextResponse> {
-  const expected = process.env.MONITOR_SECRET
+  // Secrets gravados por pipeline costumam carregar uma quebra de linha no
+  // fim (um `echo` basta para isso). Comparar sem espacos evita um 401
+  // impossivel de diagnosticar.
+  const expected = process.env.MONITOR_SECRET?.trim()
 
   if (!expected) {
     console.error('[monitor] MONITOR_SECRET não configurado — endpoint desabilitado')
@@ -53,9 +56,11 @@ async function runTick(request: NextRequest): Promise<NextResponse> {
     )
   }
 
-  const provided =
+  const provided = (
     request.headers.get('x-monitor-secret') ??
-    request.nextUrl.searchParams.get('secret')
+    request.nextUrl.searchParams.get('secret') ??
+    ''
+  ).trim()
 
   if (provided !== expected) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
