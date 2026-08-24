@@ -5,6 +5,43 @@ Registrar aqui toda implementação, fix e decisão técnica relevante ao final 
 
 ---
 
+## 2026-08-24 — Monitor ativo no ar (e a saga do 401)
+
+**Estado final: funcionando.** Run manual retornou
+`{"ok":true,"servers":1,"checked":7,"changed":0,"alerted":0,"webhook":{"healthy":true,
+"lastEventMinutesAgo":31},"durationMs":6352}` — 7 instancias reconciliadas contra o uazapiGO
+em 6,3s. Agendado a cada 5 min.
+
+**Duas causas encadeadas, ambas invisiveis sem instrumentacao:**
+
+1. `curl: (43) Failed sending HTTP request` — o valor do secret tinha espaco/quebra de linha,
+   o que produz header HTTP invalido e o curl aborta antes de conectar. Workflow passou a
+   limpar com `tr -d '[:space:]'`.
+2. `HTTP 401` persistente — o passo de deploy usava `echo "$secret" | wrangler secret put`, e o
+   `echo` acrescenta 
+. Corrigido para `printf '%s'`. **Mas o 401 continuou.**
+   Um diagnostico temporario por impressao digital (SHA-256 truncado dos dois lados) revelou:
+   Worker esperava `3d729808`, agendador enviava `ee49b0ab`, ambos lendo o MESMO secret do
+   GitHub. Causa real: o valor tem uma **quebra de linha no MEIO** — hex de 64 caracteres
+   copiado de um terminal que quebrou a linha na exibicao. O workflow removia todo espaco
+   (`tr`), o app so as pontas (`.trim()`), entao nunca coincidiam.
+
+**Licao aplicada ao codigo:** `cleanSecret()` no monitor e `normalizeSecret()` no client uazapi
+removem TODO espaco em branco, nao so das pontas. Secrets validos nao contem espaco, entao e
+seguro — e torna o sistema tolerante a um erro de copia trivial de cometer e dificil de ver.
+Aplicado tambem a UAZAPI_BASE_URL, UAZAPI_ADMIN_TOKEN e NEXT_PUBLIC_APP_URL, que estavam
+sujeitos ao mesmo problema (URL malformada e header admintoken invalido — pode ter sido causa
+de erros anteriores nao explicados).
+
+O diagnostico por impressao digital foi removido apos cumprir o papel.
+
+**Ainda pendente (acao manual):**
+- Aplicar a migration 009 no Supabase — sem ela o status `hibernated` continua sendo rejeitado.
+- Salvar o webhook global em /settings apontando para /api/webhook com o evento `connection`.
+  O watchdog ja reporta `lastEventMinutesAgo: 31`, ou seja, o webhook ainda nao esta entregando.
+
+---
+
 ## 2026-08-24 — Implementacao das melhorias da auditoria
 
 Todos os itens levantados na auditoria (entrada abaixo) foram implementados em dois commits.
