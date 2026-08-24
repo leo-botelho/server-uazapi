@@ -12,13 +12,12 @@ import { QrDisplay } from '@/components/client/qr-display'
 import { PairingCodeDisplay } from '@/components/client/pairing-code-display'
 import { ConnectionStatus } from '@/components/client/connection-status'
 
-type InstanceStatus = 'connected' | 'disconnected' | 'connecting'
+import type { InstanceStatus } from '@/lib/uazapi/types'
 type ConnectMethod = 'qr' | 'pairing'
 
 interface InstanceConnectActionsProps {
   instanceId: string
   currentStatus: InstanceStatus
-  uazapiToken: string
 }
 
 interface ReconnectTokenResponse {
@@ -29,7 +28,6 @@ interface ReconnectTokenResponse {
 export function InstanceConnectActions({
   instanceId,
   currentStatus,
-  uazapiToken,
 }: InstanceConnectActionsProps) {
   const router = useRouter()
   const [connectMethod, setConnectMethod] = useState<ConnectMethod | null>(null)
@@ -118,7 +116,7 @@ export function InstanceConnectActions({
             Voltar
           </Button>
         </div>
-        <QrDisplay instanceId={instanceId} uazapiToken={uazapiToken} />
+        <QrDisplay instanceId={instanceId} />
       </div>
     )
   }
@@ -181,7 +179,6 @@ export function InstanceConnectActions({
         </div>
         <PairingCodeDisplay
           instanceId={instanceId}
-          uazapiToken={uazapiToken}
           phone={pairPhone}
         />
       </div>

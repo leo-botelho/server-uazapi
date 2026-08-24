@@ -24,7 +24,6 @@ export default async function ReconnectPage({ params }: ReconnectPageProps) {
         id,
         name,
         status,
-        uazapi_token,
         phone_connected,
         profile_name
       )
@@ -56,11 +55,10 @@ export default async function ReconnectPage({ params }: ReconnectPageProps) {
             initialStatus={reconnectToken.instance.status}
           />
 
+          {/* O token da instância NÃO é passado adiante: ele ficava exposto no
+              payload RSC. A rota de QR resolve o token no servidor pelo id. */}
           {reconnectToken.instance.status !== 'connected' && (
-            <QrDisplay
-              instanceId={reconnectToken.instance.id}
-              uazapiToken={reconnectToken.instance.uazapi_token}
-            />
+            <QrDisplay instanceId={reconnectToken.instance.id} />
           )}
         </CardContent>
       </Card>

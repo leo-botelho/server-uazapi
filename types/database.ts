@@ -113,11 +113,12 @@ export type Database = {
           server_id: string | null
           uazapi_token: string
           name: string
-          status: 'connected' | 'disconnected' | 'connecting'
+          status: 'connected' | 'disconnected' | 'connecting' | 'hibernated'
           phone_connected: string | null
           profile_name: string | null
           profile_picture: string | null
           last_disconnected_at: string | null
+          last_seen_at: string | null
           alert_channel: 'email' | 'whatsapp' | 'n8n' | 'none'
           alert_config: Json
           silence_start: number
@@ -132,11 +133,12 @@ export type Database = {
           server_id?: string | null
           uazapi_token: string
           name: string
-          status?: 'connected' | 'disconnected' | 'connecting'
+          status?: 'connected' | 'disconnected' | 'connecting' | 'hibernated'
           phone_connected?: string | null
           profile_name?: string | null
           profile_picture?: string | null
           last_disconnected_at?: string | null
+          last_seen_at?: string | null
           alert_channel?: 'email' | 'whatsapp' | 'n8n' | 'none'
           alert_config?: Json
           silence_start?: number
@@ -151,11 +153,12 @@ export type Database = {
           server_id?: string | null
           uazapi_token?: string
           name?: string
-          status?: 'connected' | 'disconnected' | 'connecting'
+          status?: 'connected' | 'disconnected' | 'connecting' | 'hibernated'
           phone_connected?: string | null
           profile_name?: string | null
           profile_picture?: string | null
           last_disconnected_at?: string | null
+          last_seen_at?: string | null
           alert_channel?: 'email' | 'whatsapp' | 'n8n' | 'none'
           alert_config?: Json
           silence_start?: number
@@ -254,6 +257,8 @@ export type Database = {
           instance_id: string | null
           channel: string
           recipient: string | null
+          scheduled_for: string | null
+          reason: string | null
           status: 'pending' | 'sent' | 'failed'
           error: string | null
           sent_at: string | null
@@ -264,6 +269,8 @@ export type Database = {
           instance_id?: string | null
           channel: string
           recipient?: string | null
+          scheduled_for?: string | null
+          reason?: string | null
           status?: 'pending' | 'sent' | 'failed'
           error?: string | null
           sent_at?: string | null
@@ -274,6 +281,8 @@ export type Database = {
           instance_id?: string | null
           channel?: string
           recipient?: string | null
+          scheduled_for?: string | null
+          reason?: string | null
           status?: 'pending' | 'sent' | 'failed'
           error?: string | null
           sent_at?: string | null

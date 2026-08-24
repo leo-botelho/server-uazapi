@@ -5,6 +5,86 @@ Registrar aqui toda implementação, fix e decisão técnica relevante ao final 
 
 ---
 
+## 2026-08-24 — Auditoria completa: backlog priorizado
+
+Levantamento feito sobre o código + spec uazapiGO v2.1.1. Detalhe de cada item com arquivo:linha
+está no historico da sessao; resumo priorizado abaixo.
+
+### BUG CRITICO — status `hibernated` e rejeitado pelo banco (falso verde)
+A spec define 4 estados: `disconnected | connecting | connected | hibernated`
+("Sessao pausada, com credenciais preservadas"). Mas:
+- `supabase/migrations/001_initial_schema.sql:22` — CHECK aceita so 3 estados.
+- `lib/uazapi/types.ts:1` — `InstanceStatus` idem.
+Quando uma instancia hiberna, o UPDATE do webhook E do sync falham por violacao de constraint.
+O erro so vai para `console.error` → o painel continua mostrando "conectado" enquanto o agente
+esta morto. Nem o botao Sincronizar corrige. Fix: migration alterando o CHECK + tipo TS + label na UI.
+
+### P0 — Sem rede de segurança: 100% dependente do webhook
+Nao existe cron/polling (`wrangler.toml` sem `[triggers]`). Se o webhook falhar (foi o que
+aconteceu: `enabled:false`), o painel fica cego ate alguem clicar Sincronizar.
+Agravante: `app/api/instances/sync/route.ts` atualiza status mas NAO dispara notificacao — nenhum
+import de `sendDisconnectNotification`. O sync e cosmetico: cliente nunca recebe link de reconexao.
+Detalhe tecnico: o worker do OpenNext exporta so `fetch` (ver
+`node_modules/@opennextjs/cloudflare/dist/cli/templates/worker.js:15`), entao Cron Trigger do
+Cloudflare nao chega no app. Caminho: endpoint protegido `/api/monitor/tick` + agendador externo
+(GitHub Actions schedule, Supabase pg_cron ou cron-job.org).
+
+### P0 — Notificacao pode ser morta no meio (sem waitUntil)
+`app/api/webhook/route.ts:165` — `sendDisconnectNotification(...)` sem await e sem `ctx.waitUntil()`.
+Faz 4 I/O depois da resposta. No Workers a promise pode ser cancelada: token de reconexao criado,
+mensagem nao enviada, e sem registro em `notifications_log`. Falha 100% invisivel.
+
+### P1 — Janela de silencio engole o alerta para sempre
+`app/api/webhook/route.ts:195-202` — se cai na janela (default 23-7 UTC = 20h-04h BRT), faz `return`
+antes do log. Sem fila, sem reprocessamento (nao ha cron). Desconectou 20:05 → ninguem sabe, nunca.
+Justamente o horario mais comum de queda.
+
+### P1 — Portal do cliente mostra status errado
+`app/api/connect/status/route.ts` le so o banco. Com o webhook quebrado: cliente escaneia o QR,
+conecta de verdade, e a tela continua "Desconectado". Ele reescaneia e abre chamado.
+Fix: consultar `client.getStatus(token)` como fallback quando o registro esta velho.
+
+### P1 — Outros bugs confirmados
+- `sync/route.ts:146,167` — `Promise.allSettled` + filtro por `fulfilled` conta erro do banco como
+  sucesso (query builder do supabase-js resolve com `{error}`, nao rejeita). O toast mente.
+- `webhook/route.ts:163` — guarda de transicao usa `!== 'disconnected'`, entao `connecting →
+  disconnected` (QR expirado) dispara alerta novo a cada tentativa frustrada. Spam no cliente.
+- `webhook/route.ts:268` — insert em `notifications_log` nao preenche `recipient`; a coluna
+  "Destinatario" em `/alerts` fica sempre vazia. Casos suprimidos nao geram log nenhum.
+- Canal `email` retorna cedo sem enviar nem logar (`webhook/route.ts:192`), mas a API ainda aceita
+  gravar `email` via PATCH (`instances/[id]/route.ts:146`). UI ja nao oferece.
+- `supabase/functions/notify-disconnect/index.ts` e CODIGO MORTO e perigoso: ninguem o invoca, e os
+  senders sao stubs com TODO que retornam `success: true` → marcaria entregas fantasma como enviadas.
+- Multi-servidor quebrado em 3 rotas que usam o client global em vez de `getInstanceClient(id)`:
+  `instances/[id]/disconnect/route.ts:39`, `instances/[id]/route.ts:100` (delete) e `:193` (rename).
+- Alerta por WhatsApp usa outra instancia como remetente, sem filtrar por status conectado
+  (`instances/[id]/page.tsx:70`). Se o servidor cai inteiro, o alerta tambem morre.
+- Sem timeout em nenhuma chamada uazapi (`lib/uazapi/client.ts:24`).
+- `reconnect_tokens.used_at` nunca e gravado; tokens seguem validos apos uso e nada limpa a tabela.
+- Sem retention em `webhook_events` (cresce para sempre).
+- Sem testes automatizados e sem Sentry.
+
+### Features novas de maior valor (endpoints da spec ainda nao usados)
+O painel usa 12 dos 132 paths. Prioridade:
+1. `GET /instance/wa_messages_limits` (token) — detecta bloqueio de novas conversas (erro 463), a
+   causa nº1 de "o agente parou" SEM desconexao. Retorna `can_send_new_messages`,
+   `new_chat_message_capping{used_quota,total_quota,cycle_end}`, `reachout_timelock{active,until}`.
+2. `GET /webhook/errors` (token) — SOMENTE LEITURA, nao viola a regra dos webhooks dos agentes.
+   Mostra se o n8n do cliente esta devolvendo erro (`status_code`, `attempts`, `error`).
+3. `GET /globalwebhook/errors` (admintoken) — health do proprio painel; teria pego o incidente atual.
+4. `GET /webhook` (token, so GET) — exibir qual URL do n8n esta registrada e alertar se
+   `enabled:false` ou se falta o evento que o agente precisa.
+5. `GET /instance/proxy` — `mode` vs `effective_mode` + `fallback.active` revela instancia rodando
+   fora do proxy contratado. `POST /instance/proxy` com `rotate_now:true` = recuperacao barata.
+6. `GET /message/async` — fila do agente (`queue.pending`, `sessionReady`) detecta travamento.
+7. `GET /instance/all` (JA chamado) traz de graca `isBusiness`, `plataform`, `current_presence`,
+   `adminField01/02` — indicadores de saude sem nenhuma chamada nova.
+8. `POST /instance/updateAdminFields` — carimbar client_id/workflow n8n na propria uazapi.
+9. `POST /profile/name` e `/profile/image` — cliente arruma nome/foto sem pedir o celular.
+10. `GET /chat/blocklist` + `POST /chat/block` — "o agente nao responde o fulano" costuma ser bloqueio.
+
+---
+
 ## 2026-08-24 — Diagnóstico + fix: status de desconexão não atualizava sem sync manual
 
 **Causa raiz (confirmada em produção)**

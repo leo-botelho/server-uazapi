@@ -9,7 +9,6 @@ const POLL_INTERVAL_MS = 3000
 
 interface QrDisplayProps {
   instanceId: string
-  uazapiToken: string
 }
 
 interface QrResponse {
@@ -24,7 +23,7 @@ interface StatusResponse {
 
 type DisplayState = 'loading' | 'qr' | 'expired' | 'connected' | 'error'
 
-export function QrDisplay({ instanceId, uazapiToken }: QrDisplayProps) {
+export function QrDisplay({ instanceId }: QrDisplayProps) {
   const [displayState, setDisplayState] = useState<DisplayState>('loading')
   const [qrBase64, setQrBase64] = useState<string | null>(null)
   const [secondsLeft, setSecondsLeft] = useState(QR_TIMEOUT_SECONDS)
@@ -39,7 +38,7 @@ export function QrDisplay({ instanceId, uazapiToken }: QrDisplayProps) {
       const res = await fetch('/api/connect/qr', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ instanceId, token: uazapiToken }),
+        body: JSON.stringify({ instanceId }),
       })
 
       if (!res.ok) {
@@ -64,7 +63,7 @@ export function QrDisplay({ instanceId, uazapiToken }: QrDisplayProps) {
       setErrorMessage(err instanceof Error ? err.message : 'Erro desconhecido')
       setDisplayState('error')
     }
-  }, [instanceId, uazapiToken])
+  }, [instanceId])
 
   // Busca o QR ao montar
   useEffect(() => {

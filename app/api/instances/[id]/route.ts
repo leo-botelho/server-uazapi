@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireAuth } from '@/lib/api-helpers'
-import { uazapi } from '@/lib/uazapi/client'
+import { requireAuth, getInstanceClient } from '@/lib/api-helpers'
 import { createServiceClient } from '@/lib/supabase/server'
 import type { Database } from '@/types/database'
 
@@ -95,17 +94,26 @@ export async function DELETE(
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 
-  // Best-effort deletion from uazapiGO
+  // Best-effort deletion from uazapiGO — no servidor correto da instância.
+  let remoteDeleted = true
+  let remoteError: string | null = null
   try {
-    await uazapi.deleteInstance(instance.uazapi_token)
+    const resolved = await getInstanceClient(id)
+    if (!resolved) throw new Error('Servidor da instância não resolvido')
+    await resolved.client.deleteInstance(resolved.uazapiToken)
   } catch (err) {
-    console.warn(
-      '[instances/[id] DELETE] uazapi delete failed (soft-delete already done):',
-      err instanceof Error ? err.message : err
-    )
+    remoteDeleted = false
+    remoteError = err instanceof Error ? err.message : String(err)
+    console.warn('[instances/[id] DELETE] uazapi delete failed (soft-delete already done):', remoteError)
   }
 
-  return NextResponse.json({ success: true })
+  // Antes respondia sempre `success: true`, então a instância sumia do painel e
+  // continuava viva (e cobrando) no uazapiGO sem ninguém saber.
+  return NextResponse.json({
+    success: true,
+    remoteDeleted,
+    ...(remoteError ? { warning: `Removida do painel, mas o uazapiGO recusou a exclusão: ${remoteError}` } : {}),
+  })
 }
 
 // PATCH /api/instances/[id] — update name, client_id, alert settings
@@ -145,7 +153,9 @@ export async function PATCH(
 
   if (
     typeof raw['alertChannel'] === 'string' &&
-    ['email', 'whatsapp', 'n8n', 'none'].includes(raw['alertChannel'])
+    // `email` foi removido: não existe implementação de envio e gravá-lo produzia
+      // uma instância que aparentava ter alerta configurado e nunca notificava.
+      ['whatsapp', 'n8n', 'none'].includes(raw['alertChannel'])
   ) {
     update.alert_channel = raw['alertChannel'] as InstanceUpdate['alert_channel']
   }
@@ -190,7 +200,9 @@ export async function PATCH(
     }
 
     try {
-      await uazapi.updateName(inst.uazapi_token, update.name)
+      const resolved = await getInstanceClient(id)
+      if (!resolved) throw new Error('Servidor da instância não resolvido')
+      await resolved.client.updateName(resolved.uazapiToken, update.name)
     } catch (err) {
       console.warn('[instances/[id] PATCH] uazapi rename failed:', err instanceof Error ? err.message : err)
       // Non-fatal — DB rename still proceeds

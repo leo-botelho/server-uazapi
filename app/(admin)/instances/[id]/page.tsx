@@ -225,7 +225,6 @@ export default async function InstanceDetailPage({
               <InstanceConnectActions
                 instanceId={instance.id}
                 currentStatus={instance.status}
-                uazapiToken={instance.uazapi_token}
               />
             </CardContent>
           </Card>

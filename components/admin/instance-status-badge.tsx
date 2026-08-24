@@ -1,10 +1,9 @@
 'use client'
 
 import { Badge } from '@/components/ui/badge'
-import { Wifi, WifiOff, Loader2 } from 'lucide-react'
+import { Wifi, WifiOff, Loader2, PauseCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
-
-type InstanceStatus = 'connected' | 'disconnected' | 'connecting'
+import type { InstanceStatus } from '@/lib/uazapi/types'
 
 const statusConfig: Record<
   InstanceStatus,
@@ -25,10 +24,24 @@ const statusConfig: Record<
     className: 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-800',
     Icon: Loader2,
   },
+  // Sessão pausada com credenciais preservadas: o agente NÃO está atendendo,
+  // mas a reconexão dispensa QR code — por isso cor de alerta, não de erro.
+  hibernated: {
+    label: 'Hibernada',
+    className: 'bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-800',
+    Icon: PauseCircle,
+  },
 }
 
 export function InstanceStatusBadge({ status }: { status: InstanceStatus }) {
-  const { label, className, Icon } = statusConfig[status]
+  // Fallback defensivo: se o uazapiGO passar a devolver um status novo, mostra
+  // o valor cru em vez de quebrar a página inteira com um erro de runtime.
+  const config = statusConfig[status] ?? {
+    label: String(status ?? 'desconhecido'),
+    className: 'bg-muted text-muted-foreground border-border',
+    Icon: WifiOff,
+  }
+  const { label, className, Icon } = config
 
   return (
     <Badge

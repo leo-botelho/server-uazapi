@@ -1,0 +1,60 @@
+name: Monitor de instâncias
+
+# Rede de segurança do painel: chama /api/monitor/tick periodicamente para
+# reconciliar o status das instâncias direto no uazapiGO, disparar alertas de
+# queda e reenviar alertas adiados pela janela de silêncio.
+#
+# Por que aqui e não em Cron Trigger do Cloudflare: o worker gerado pelo
+# OpenNext exporta apenas o handler `fetch`, então um cron do Cloudflare não
+# alcança as rotas da aplicação. O agendamento precisa vir de fora, por HTTP.
+#
+# Secrets necessários no repositório:
+#   MONITOR_URL     — ex: https://server.smartskillshub.com.br/api/monitor/tick
+#   MONITOR_SECRET  — mesmo valor do secret MONITOR_SECRET no Worker
+#
+# Atenção: o agendador do GitHub Actions é best-effort e costuma atrasar em
+# horários de pico. Para cadência realmente firme (1–2 min), troque por
+# pg_cron do Supabase ou um serviço de cron dedicado apontando para a mesma URL.
+
+on:
+  schedule:
+    # A cada 5 minutos.
+    - cron: '*/5 * * * *'
+  workflow_dispatch:   # permite rodar manualmente pela aba Actions
+
+# Se um tick anterior ainda estiver rodando, não empilha outro.
+concurrency:
+  group: monitor-tick
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Chamar o monitor
+        env:
+          MONITOR_URL:    ${{ secrets.MONITOR_URL }}
+          MONITOR_SECRET: ${{ secrets.MONITOR_SECRET }}
+        run: |
+          if [ -z "$MONITOR_URL" ] || [ -z "$MONITOR_SECRET" ]; then
+            echo "::error::Configure os secrets MONITOR_URL e MONITOR_SECRET no repositório."
+            exit 1
+          fi
+
+          response=$(mktemp)
+          code=$(curl -sS -o "$response" -w '%{http_code}' \
+            --max-time 120 \
+            -X POST "$MONITOR_URL" \
+            -H "x-monitor-secret: $MONITOR_SECRET")
+
+          echo "HTTP $code"
+          cat "$response"
+          echo
+
+          # 207 = houve erro em algum servidor, mas o tick rodou: falha o job
+          # para aparecer no histórico do Actions sem derrubar o agendamento.
+          if [ "$code" != "200" ]; then
+            echo "::error::Monitor retornou HTTP $code"
+            exit 1
+          fi

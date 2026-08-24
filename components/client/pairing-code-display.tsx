@@ -9,7 +9,6 @@ const POLL_INTERVAL_MS = 3000
 
 interface PairingCodeDisplayProps {
   instanceId: string
-  uazapiToken: string
   phone: string
 }
 
@@ -39,7 +38,7 @@ function formatSeconds(s: number): string {
   return `${m}:${rem.toString().padStart(2, '0')}`
 }
 
-export function PairingCodeDisplay({ instanceId, uazapiToken, phone }: PairingCodeDisplayProps) {
+export function PairingCodeDisplay({ instanceId, phone }: PairingCodeDisplayProps) {
   const [displayState, setDisplayState] = useState<DisplayState>('loading')
   const [pairingCode, setPairingCode] = useState<string | null>(null)
   const [secondsLeft, setSecondsLeft] = useState(PAIRING_TIMEOUT_SECONDS)
@@ -54,7 +53,7 @@ export function PairingCodeDisplay({ instanceId, uazapiToken, phone }: PairingCo
       const res = await fetch('/api/connect/pair', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ instanceId, token: uazapiToken, phone }),
+        body: JSON.stringify({ instanceId, phone }),
       })
 
       if (!res.ok) {
@@ -79,7 +78,7 @@ export function PairingCodeDisplay({ instanceId, uazapiToken, phone }: PairingCo
       setErrorMessage(err instanceof Error ? err.message : 'Erro desconhecido')
       setDisplayState('error')
     }
-  }, [instanceId, uazapiToken, phone])
+  }, [instanceId, phone])
 
   // Busca ao montar
   useEffect(() => {

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireAuth } from '@/lib/api-helpers'
-import { uazapi } from '@/lib/uazapi/client'
+import { requireAuth, getInstanceClient } from '@/lib/api-helpers'
 import { createServiceClient } from '@/lib/supabase/server'
 
 // POST /api/instances/[id]/disconnect
@@ -36,7 +35,11 @@ export async function POST(
   }
 
   try {
-    await uazapi.disconnect(instance.uazapi_token)
+    // Resolve o servidor da própria instância. Usar o client global mandava a
+    // ordem para o servidor errado quando a instância pertencia a outro server.
+    const resolved = await getInstanceClient(id)
+    if (!resolved) throw new Error('Servidor da instância não resolvido')
+    await resolved.client.disconnect(resolved.uazapiToken)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown uazapi error'
     console.error('[instances/[id]/disconnect POST] uazapi error:', message)

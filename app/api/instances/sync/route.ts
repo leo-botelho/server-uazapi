@@ -17,6 +17,34 @@ import type { InstanceStatus } from '@/lib/uazapi/types'
  *
  * Returns { imported, repaired, updated, skipped, total }
  */
+/**
+ * Conta quantas operações realmente deram certo.
+ *
+ * ⚠️ Um query builder do supabase-js RESOLVE com `{ data, error }` quando o
+ * banco recusa a operação — ele não rejeita a promise. Contar `fulfilled` do
+ * `Promise.allSettled` marcava erro de banco como sucesso e o toast do painel
+ * reportava números inflados (foi assim que a violação do CHECK de status
+ * passou despercebida).
+ */
+function countSucceeded(
+  results: PromiseSettledResult<{ error: { message: string } | null }>[],
+  label: string
+): number {
+  let ok = 0
+  for (const r of results) {
+    if (r.status === 'rejected') {
+      console.error(`[sync] ${label} lançou exceção:`, r.reason)
+      continue
+    }
+    if (r.value?.error) {
+      console.error(`[sync] ${label} recusado pelo banco:`, r.value.error.message)
+      continue
+    }
+    ok++
+  }
+  return ok
+}
+
 export async function POST(): Promise<NextResponse> {
   const { error } = await requireAuth()
   if (error) return error
@@ -143,7 +171,7 @@ export async function POST(): Promise<NextResponse> {
           .eq('id', dbId)
       )
     )
-    updatedCount = results.filter((r) => r.status === 'fulfilled').length
+    updatedCount = countSucceeded(results, 'update')
   }
 
   // ── Repair wrong tokens ───────────────────────────────────────────────────
@@ -164,10 +192,7 @@ export async function POST(): Promise<NextResponse> {
           .eq('id', dbId)
       )
     )
-    repairedCount = results.filter((r) => r.status === 'fulfilled').length
-    if (results.filter((r) => r.status === 'rejected').length > 0) {
-      console.warn('[sync] Some token repairs failed')
-    }
+    repairedCount = countSucceeded(results, 'repair')
   }
 
   // ── Insert new instances ──────────────────────────────────────────────────

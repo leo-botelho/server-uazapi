@@ -27,8 +27,7 @@ type PhoneFormValues = z.infer<typeof phoneSchema>
 interface LookupResult {
   instanceId: string
   instanceName: string
-  status: 'connected' | 'disconnected' | 'connecting'
-  uazapiToken: string
+  status: 'connected' | 'disconnected' | 'connecting' | 'hibernated'
 }
 
 interface LookupErrorResponse {
@@ -122,7 +121,6 @@ export function PhoneForm() {
           </div>
           <QrDisplay
             instanceId={lookupResult.instanceId}
-            uazapiToken={lookupResult.uazapiToken}
           />
         </div>
       )
@@ -145,7 +143,6 @@ export function PhoneForm() {
           </div>
           <PairingCodeDisplay
             instanceId={lookupResult.instanceId}
-            uazapiToken={lookupResult.uazapiToken}
             phone={phone}
           />
         </div>
