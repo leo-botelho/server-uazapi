@@ -43,7 +43,13 @@ entrega nenhum evento `connection` → o status só muda quando se clica "Sincro
   conferir `GET /globalwebhook/errors`.
 - Alertas de desconexão (`sendDisconnectNotification`) são fire-and-forget sem `waitUntil` — no
   Cloudflare Workers podem ser mortos após a resposta. Não afeta o update de status (que é awaited).
-- Deploy pendente (push para main dispara GitHub Actions).
+- ~~Deploy pendente~~ — commit `6cf788f` deployado com sucesso (run 32718182106, 1m42s).
+  Receptor publico verificado ao vivo: `POST https://server.smartskillshub.com.br/api/webhook`
+  responde 200 sem auth (evento != connection retorna cedo, sem escrita no banco).
+- **Acao manual restante:** em `/settings`, salvar o webhook global apontando para
+  `https://server.smartskillshub.com.br/api/webhook` com o evento `connection`.
+  Se o toast avisar que ficou `enabled: false`, o servidor ignora o campo via API →
+  plano B: ativar manualmente no servidor ou checar `GET /globalwebhook/errors`.
 
 ---
 
