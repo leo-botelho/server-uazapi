@@ -33,6 +33,18 @@ import { handleStatusTransition, flushPendingAlerts, type AlertInstance } from '
 /** Sem notícia do webhook por mais que isso, algo está errado com a entrega. */
 const WEBHOOK_SILENCE_ALERT_MINUTES = 60
 
+/**
+ * Remove TODO espaco em branco de um secret, nao so das pontas.
+ *
+ * Um valor hex copiado de um terminal que quebrou a linha chega com um
+ * newline no MEIO. O agendador ja normalizava assim (`tr -d [:space:]`), e o
+ * app so fazia trim() — as duas pontas nunca batiam e o resultado era um 401
+ * sem explicacao. Secrets validos nao contem espaco, entao remover e seguro.
+ */
+function cleanSecret(value: string | undefined | null): string {
+  return (value ?? '').replace(/\s+/g, '')
+}
+
 export async function POST(request: NextRequest): Promise<NextResponse> {
   return runTick(request)
 }
@@ -46,7 +58,7 @@ async function runTick(request: NextRequest): Promise<NextResponse> {
   // Secrets gravados por pipeline costumam carregar uma quebra de linha no
   // fim (um `echo` basta para isso). Comparar sem espacos evita um 401
   // impossivel de diagnosticar.
-  const expected = process.env.MONITOR_SECRET?.trim()
+  const expected = cleanSecret(process.env.MONITOR_SECRET)
 
   if (!expected) {
     console.error('[monitor] MONITOR_SECRET não configurado — endpoint desabilitado')
@@ -56,11 +68,10 @@ async function runTick(request: NextRequest): Promise<NextResponse> {
     )
   }
 
-  const provided = (
+  const provided = cleanSecret(
     request.headers.get('x-monitor-secret') ??
-    request.nextUrl.searchParams.get('secret') ??
-    ''
-  ).trim()
+    request.nextUrl.searchParams.get('secret')
+  )
 
   if (provided !== expected) {
     // Diagnostico: compara impressoes digitais em vez dos valores. Oito hex

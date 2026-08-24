@@ -1,6 +1,7 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { getInstanceClient } from '@/lib/api-helpers'
 import { isOffline, type InstanceStatus } from '@/lib/uazapi/types'
+import { normalizeSecret } from '@/lib/uazapi/client'
 
 /**
  * Disparo de alertas de queda de instância.
@@ -384,7 +385,7 @@ async function hasRecentAlert(supabase: SupabaseService, instanceId: string): Pr
  * funcional na mão do cliente.
  */
 async function buildReconnectUrl(supabase: SupabaseService, instanceId: string): Promise<string | null> {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, '')
+  const appUrl = normalizeSecret(process.env.NEXT_PUBLIC_APP_URL).replace(/\/$/, '')
   if (!appUrl) {
     console.error('[notify] NEXT_PUBLIC_APP_URL ausente — não é possível montar o link de reconexão')
     return null

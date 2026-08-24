@@ -4,6 +4,19 @@ import type {
   WaMessagesLimits, WebhookDeliveryError, InstanceWebhookConfig, InstanceProxy, AsyncQueueStatus,
 } from './types'
 
+/**
+ * Remove todo espaco em branco de URLs e tokens vindos de secrets.
+ * Valores colados de terminais que quebram linha chegam com newline no meio, o
+ * que produz URL malformada e header `admintoken` invalido.
+ */
+export function normalizeSecret(value: string | undefined | null): string {
+  return (value ?? '').replace(/\s+/g, '')
+}
+
+function normalizeUrl(value: string): string {
+  return normalizeSecret(value).replace(/\/$/, '')
+}
+
 /** Timeout padrão de qualquer chamada ao uazapiGO. */
 const DEFAULT_TIMEOUT_MS = 15_000
 
@@ -212,14 +225,14 @@ function createUazapiClient(baseUrl: string, defaultAdminToken: string) {
 // Default client using env vars (fallback for server-side usage without DB lookup)
 // `.trim()` porque um secret gravado via `echo` carrega uma quebra de linha no
 // fim — isso quebra a URL base e torna o header `admintoken` invalido.
-const defaultBaseUrl = (process.env.UAZAPI_BASE_URL ?? 'https://free.uazapi.com').trim().replace(/\/$/, '')
-const defaultAdminToken = (process.env.UAZAPI_ADMIN_TOKEN ?? '').trim()
+const defaultBaseUrl = normalizeUrl(process.env.UAZAPI_BASE_URL ?? 'https://free.uazapi.com')
+const defaultAdminToken = normalizeSecret(process.env.UAZAPI_ADMIN_TOKEN)
 
 export const uazapi = createUazapiClient(defaultBaseUrl, defaultAdminToken)
 
 // Factory: create a client bound to a specific server's URL and admin token
 export function createUazapi(serverUrl: string, adminToken: string) {
-  return createUazapiClient(serverUrl.trim().replace(/\/$/, ''), adminToken.trim())
+  return createUazapiClient(normalizeUrl(serverUrl), normalizeSecret(adminToken))
 }
 
 export type UazapiClient = ReturnType<typeof createUazapiClient>
