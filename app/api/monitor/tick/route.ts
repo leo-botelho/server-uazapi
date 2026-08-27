@@ -97,6 +97,7 @@ async function runTick(request: NextRequest): Promise<NextResponse> {
   let repaired = 0
   let renamed  = 0
   const orphans: string[] = []
+  const driftErrors: string[] = []
   const errors: string[] = []
 
   for (const target of targets) {
@@ -108,6 +109,7 @@ async function runTick(request: NextRequest): Promise<NextResponse> {
       repaired += result.repaired
       renamed  += result.renamed
       orphans.push(...result.orphans)
+      driftErrors.push(...result.driftErrors)
     } catch (err) {
       const msg = `${target.label}: ${err instanceof Error ? err.message : String(err)}`
       console.error('[monitor]', msg)
@@ -191,6 +193,7 @@ async function runTick(request: NextRequest): Promise<NextResponse> {
     repaired,
     // Nomes atualizados a partir do uazapiGO.
     renamed,
+    ...(driftErrors.length ? { driftErrors } : {}),
     // Existem no uazapiGO e nao no painel — precisam de "Sincronizar".
     ...(orphans.length ? { orphans } : {}),
     pendingAlertsSent: flushed,
@@ -271,11 +274,11 @@ async function resolveServers(
 async function reconcileServer(
   supabase: Awaited<ReturnType<typeof createServiceClient>>,
   target: ServerTarget
-): Promise<{ checked: number; changed: number; alerted: number; repaired: number; renamed: number; orphans: string[] }> {
+): Promise<{ checked: number; changed: number; alerted: number; repaired: number; renamed: number; orphans: string[]; driftErrors: string[] }> {
   const remote = await target.client.listInstances()
 
   if (!Array.isArray(remote) || remote.length === 0) {
-    return { checked: 0, changed: 0, alerted: 0, repaired: 0, renamed: 0, orphans: [] }
+    return { checked: 0, changed: 0, alerted: 0, repaired: 0, renamed: 0, orphans: [], driftErrors: [] }
   }
 
   // Token canonico da instancia remota — mesma regra usada pelo sync.
@@ -311,6 +314,7 @@ async function reconcileServer(
   let repaired = 0
   let renamed  = 0
   const orphans: string[] = []
+  const driftErrors: string[] = []
   const now = new Date().toISOString()
 
   for (const inst of remote) {
@@ -381,7 +385,19 @@ async function reconcileServer(
     if (remotePicture !== null) drift.profile_picture = remotePicture
 
     if (newStatus === previousStatus) {
-      await supabase.from('instances').update(drift).eq('id', row.id)
+      const { error: driftError } = await supabase
+        .from('instances')
+        .update(drift)
+        .eq('id', row.id)
+
+      // Este erro era engolido: o nome nunca era gravado e todo tick voltava a
+      // reportar a mesma instancia como renomeada.
+      if (driftError) {
+        console.error(
+          `[monitor] falha ao atualizar "${row.name}" -> "${drift.name ?? row.name}": ${driftError.message}`
+        )
+        driftErrors.push(`${row.name}: ${driftError.message}`)
+      }
       continue
     }
 
@@ -435,7 +451,7 @@ async function reconcileServer(
     }
   }
 
-  return { checked, changed, alerted, repaired, renamed, orphans }
+  return { checked, changed, alerted, repaired, renamed, orphans, driftErrors }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
