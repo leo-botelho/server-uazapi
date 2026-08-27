@@ -5,6 +5,53 @@ Registrar aqui toda implementação, fix e decisão técnica relevante ao final 
 
 ---
 
+## 2026-08-27 — Instancia reconectou e o painel so atualizou no sync manual
+
+**Sintoma:** cliente reconectou; o painel so refletiu quando o operador clicou em "Sincronizar".
+
+**Causa 1 — o agendamento nao cumpria os 5 minutos.**
+Os runs do GitHub Actions saiam de hora em hora, com lacunas de ate 7h30
+(2026-08-26T23:51 -> 2026-08-27T07:22). O cron do GitHub e best-effort e descarta execucoes
+sob carga; `*/5` na pratica nunca foi respeitado. A reconexao caiu numa lacuna.
+
+**Correcao:** `workers/monitor-cron/` — worker dedicado com Cron Trigger do Cloudflare a cada
+2 min, que so chama `POST /api/monitor/tick`. Cloudflare confirmou no deploy:
+`Deployed server-uazapi-monitor-cron triggers / schedule: */2 * * * *`.
+URL de disparo manual: https://server-uazapi-monitor-cron.leonardo-fce.workers.dev
+O `monitor.yml` do GitHub virou backup de 30 em 30 min.
+(O worker principal nao aceita cron porque o OpenNext exporta apenas o handler `fetch`.)
+
+**Causa 2 — o webhook global segue sem entregar.**
+`lastEventMinutesAgo` chegou a 2872 (47h). Mas o autofix novo reporta `action: "ok"`, ou seja,
+a config esta correta: aponta para o receptor do painel, `enabled: true`, com o evento
+`connection`. E `GET /globalwebhook/errors` volta vazio — o servidor nao registra falha de
+entrega. Conclusao: ou o uazapiGO nao esta emitindo, ou simplesmente nao houve evento desde que
+a config ficou correta. **O numero 2872 e retroativo e nao prova nada sobre o estado atual.**
+
+**Melhorias implementadas nesta rodada:**
+- **Auto-correcao do webhook global** no monitor: se estiver ausente, desativado, sem o evento
+  `connection`, ou apontando para outro destino enquanto nada chega ha muito tempo, o monitor
+  reconfigura e reconfere relendo do servidor. Preserva os eventos existentes e NAO sequestra
+  config de terceiro que esteja saudavel. Mexe so no webhook GLOBAL — os por instancia
+  continuam intocados. Desligavel com `MONITOR_AUTOFIX_WEBHOOK=false`.
+- **Batimento do webhook** (migration 010 + tabela `webhook_heartbeat`): o watchdog media
+  "tempo desde o ultimo evento connection", o que confunde canal morto com canal saudavel sem
+  mudanca de estado. Agora o receptor registra a ultima entrega de QUALQUER tipo antes de
+  filtrar, e o monitor reporta `lastDeliveryMinutesAgo` e `lastConnectionEventMinutesAgo`
+  separados. Se a migration nao estiver aplicada, cai para o sinal antigo sem quebrar.
+- Quando o webhook esta mudo, o monitor anexa os 5 erros mais recentes de
+  `GET /globalwebhook/errors` ao resultado — responde POR QUE nao chega.
+
+**Impacto pratico:** o pior caso de atraso caiu de "horas ate alguem clicar em Sincronizar"
+para **2 minutos**, mesmo com o webhook completamente fora do ar.
+
+**PENDENTE — as duas migrations ainda nao foram aplicadas no Supabase:**
+- `009_hibernated_and_alert_reliability.sql` — sem ela o status `hibernated` continua sendo
+  REJEITADO pelo banco e o painel mostra "conectado" para instancia parada (falso verde).
+- `010_webhook_heartbeat.sql` — sem ela o watchdog nao distingue canal morto de canal ocioso.
+
+---
+
 ## 2026-08-24 — Monitor ativo no ar (e a saga do 401)
 
 **Estado final: funcionando.** Run manual retornou
