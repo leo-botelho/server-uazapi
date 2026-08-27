@@ -91,17 +91,23 @@ async function runTick(request: NextRequest): Promise<NextResponse> {
   }
 
   // ── 2. Reconcilia cada servidor ───────────────────────────────────────────
-  let checked = 0
-  let changed = 0
-  let alerted = 0
+  let checked  = 0
+  let changed  = 0
+  let alerted  = 0
+  let repaired = 0
+  let renamed  = 0
+  const orphans: string[] = []
   const errors: string[] = []
 
   for (const target of targets) {
     try {
       const result = await reconcileServer(supabase, target)
-      checked += result.checked
-      changed += result.changed
-      alerted += result.alerted
+      checked  += result.checked
+      changed  += result.changed
+      alerted  += result.alerted
+      repaired += result.repaired
+      renamed  += result.renamed
+      orphans.push(...result.orphans)
     } catch (err) {
       const msg = `${target.label}: ${err instanceof Error ? err.message : String(err)}`
       console.error('[monitor]', msg)
@@ -169,6 +175,13 @@ async function runTick(request: NextRequest): Promise<NextResponse> {
     checked,
     changed,
     alerted,
+    // Tokens corrigidos: o registro apontava para um token que nao existe mais,
+    // o que tornava a instancia invisivel para o webhook e para o monitor.
+    repaired,
+    // Nomes atualizados a partir do uazapiGO.
+    renamed,
+    // Existem no uazapiGO e nao no painel — precisam de "Sincronizar".
+    ...(orphans.length ? { orphans } : {}),
     pendingAlertsSent: flushed,
     purged,
     webhook: {
@@ -246,36 +259,82 @@ async function resolveServers(
 async function reconcileServer(
   supabase: Awaited<ReturnType<typeof createServiceClient>>,
   target: ServerTarget
-): Promise<{ checked: number; changed: number; alerted: number }> {
+): Promise<{ checked: number; changed: number; alerted: number; repaired: number; renamed: number; orphans: string[] }> {
   const remote = await target.client.listInstances()
 
   if (!Array.isArray(remote) || remote.length === 0) {
-    return { checked: 0, changed: 0, alerted: 0 }
+    return { checked: 0, changed: 0, alerted: 0, repaired: 0, renamed: 0, orphans: [] }
   }
 
-  // Indexa o estado remoto pelo token de autenticação (a chave usada no banco).
-  const remoteByToken = new Map<string, (typeof remote)[number]>()
-  for (const inst of remote) {
-    const token = inst.token ?? inst.id
-    if (token) remoteByToken.set(token, inst)
-  }
+  // Token canonico da instancia remota — mesma regra usada pelo sync.
+  const authToken = (inst: (typeof remote)[number]): string => inst.token ?? inst.id ?? ''
 
+  // Le TODAS as instancias ativas, nao apenas as cujo token bate. Filtrar por
+  // token aqui era o bug: quando o token guardado no banco diverge do atual, a
+  // instancia sumia do monitor E do webhook (que tambem busca por token), e so
+  // o botao "Sincronizar" — que repara o token — fazia o painel voltar a ver.
   const { data: rows, error } = await supabase
     .from('instances')
     .select('id, name, uazapi_token, status, alert_channel, alert_config, silence_start, silence_end, client_id')
     .eq('active', true)
-    .in('uazapi_token', [...remoteByToken.keys()])
 
   if (error) throw new Error(`consulta ao banco falhou: ${error.message}`)
 
-  let checked = 0
-  let changed = 0
-  let alerted = 0
+  const byToken = new Map((rows ?? []).map((r) => [r.uazapi_token, r]))
+
+  // Nome so serve como chave de reparo quando e inequivoco dos dois lados.
+  const dbNameCount     = new Map<string, number>()
+  const remoteNameCount = new Map<string, number>()
+  for (const r of rows ?? [])  dbNameCount.set(r.name, (dbNameCount.get(r.name) ?? 0) + 1)
+  for (const i of remote)      remoteNameCount.set(i.name, (remoteNameCount.get(i.name) ?? 0) + 1)
+  const byName = new Map(
+    (rows ?? [])
+      .filter((r) => dbNameCount.get(r.name) === 1 && remoteNameCount.get(r.name) === 1)
+      .map((r) => [r.name, r])
+  )
+
+  let checked  = 0
+  let changed  = 0
+  let alerted  = 0
+  let repaired = 0
+  let renamed  = 0
+  const orphans: string[] = []
   const now = new Date().toISOString()
 
-  for (const row of rows ?? []) {
-    const inst = remoteByToken.get(row.uazapi_token)
-    if (!inst) continue
+  for (const inst of remote) {
+    const token = authToken(inst)
+    if (!token) continue
+
+    let row = byToken.get(token)
+
+    // Token divergente: recupera pelo nome e corrige o registro.
+    if (!row) {
+      const candidate = byName.get(inst.name)
+      if (candidate && !byToken.has(candidate.uazapi_token === token ? '' : token)) {
+        const { error: repairError } = await supabase
+          .from('instances')
+          .update({ uazapi_token: token, last_seen_at: now })
+          .eq('id', candidate.id)
+
+        if (repairError) {
+          console.error(`[monitor] falha ao reparar token de "${inst.name}":`, repairError.message)
+        } else {
+          console.warn(
+            `[monitor] token corrigido para "${inst.name}" — o registro apontava para um token ` +
+            'que nao existe mais no servidor, entao webhook e monitor nao a enxergavam.'
+          )
+          repaired++
+          row = { ...candidate, uazapi_token: token }
+          byToken.set(token, row)
+        }
+      }
+    }
+
+    if (!row) {
+      // Existe no uazapiGO e nao no painel: precisa de importacao via Sincronizar.
+      orphans.push(inst.name)
+      continue
+    }
 
     checked++
 
@@ -287,26 +346,38 @@ async function reconcileServer(
     const previousStatus = row.status as InstanceStatus
     const newStatus      = inst.status
 
-    // Sem mudança: só carimba que a instância foi vista agora. Isso é o que
-    // permite ao portal do cliente saber se o dado está fresco.
+    // Campos que mudam independentemente do status — nome incluso. Antes, sem
+    // mudanca de status o monitor so carimbava `last_seen_at`, entao renomear a
+    // instancia no painel do uazapiGO nunca chegava aqui.
+    const remoteName    = inst.name?.trim()
+    const remoteProfile = inst.profileName   ?? inst.profileInfo?.name    ?? null
+    const remotePicture = inst.profilePicUrl ?? inst.profileInfo?.picture ?? null
+
+    const drift: {
+      last_seen_at: string
+      name?: string
+      profile_name?: string | null
+      profile_picture?: string | null
+    } = { last_seen_at: now }
+
+    if (remoteName && remoteName !== row.name) {
+      drift.name = remoteName
+      console.log(`[monitor] "${row.name}" renomeada no uazapiGO para "${remoteName}"`)
+      renamed++
+    }
+    if (remoteProfile !== null) drift.profile_name    = remoteProfile
+    if (remotePicture !== null) drift.profile_picture = remotePicture
+
     if (newStatus === previousStatus) {
-      await supabase.from('instances').update({ last_seen_at: now }).eq('id', row.id)
+      await supabase.from('instances').update(drift).eq('id', row.id)
       continue
     }
 
-    const updatePayload: {
+    const updatePayload: typeof drift & {
       status: InstanceStatus
-      last_seen_at: string
-      profile_name: string | null
-      profile_picture: string | null
       phone_connected?: string | null
       last_disconnected_at?: string
-    } = {
-      status: newStatus,
-      last_seen_at: now,
-      profile_name:    inst.profileName   ?? inst.profileInfo?.name    ?? null,
-      profile_picture: inst.profilePicUrl ?? inst.profileInfo?.picture ?? null,
-    }
+    } = { ...drift, status: newStatus }
 
     if (newStatus === 'connected') {
       updatePayload.phone_connected = inst.owner ?? inst.phone ?? null
@@ -314,12 +385,11 @@ async function reconcileServer(
       updatePayload.phone_connected      = null
       updatePayload.last_disconnected_at = inst.lastDisconnect ?? inst.lastDisconnection ?? now
     } else if (newStatus === 'hibernated') {
-      // Credenciais preservadas — mantém o telefone.
       updatePayload.last_disconnected_at = inst.lastDisconnect ?? inst.lastDisconnection ?? now
     }
 
-    // Compare-and-set: se o webhook aplicou a mesma mudança enquanto isso,
-    // ele já cuidou do alerta e este ciclo não deve notificar de novo.
+    // Compare-and-set: se o webhook aplicou a mesma mudanca enquanto isso, ele
+    // ja cuidou do alerta e este ciclo nao deve notificar de novo.
     const { data: updated, error: updateError } = await supabase
       .from('instances')
       .update(updatePayload)
@@ -353,7 +423,7 @@ async function reconcileServer(
     }
   }
 
-  return { checked, changed, alerted }
+  return { checked, changed, alerted, repaired, renamed, orphans }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
