@@ -137,6 +137,17 @@ async function runTick(request: NextRequest): Promise<NextResponse> {
   const webhookHealthy = deliveryAgo !== null && deliveryAgo < WEBHOOK_SILENCE_ALERT_MINUTES
   const webhookSilentFor = deliveryAgo
 
+  // Eventos que chegaram e nao encontraram instancia dona (busca por token).
+  // Sinal claro de token divergente: a entrega funciona, mas o status nunca
+  // muda porque o evento nao se liga a nenhum registro.
+  const orphanEvents = await orphanEventCount(supabase)
+  if (orphanEvents > 0) {
+    console.warn(
+      `[monitor] ${orphanEvents} evento(s) de webhook na ultima hora sem instancia ` +
+      'correspondente — token divergente ou instancia ainda nao importada.'
+    )
+  }
+
   // Quando esta mudo, pergunta ao proprio uazapiGO por que as entregas falham.
   let deliveryErrors: Array<{ status?: number; error?: string; created?: string }> | undefined
   if (!webhookHealthy && targets[0]) {
@@ -189,6 +200,7 @@ async function runTick(request: NextRequest): Promise<NextResponse> {
       lastDeliveryMinutesAgo: deliveryAgo,
       lastConnectionEventMinutesAgo: connectionAgo,
       autofix: webhookFix,
+      orphanEvents,
       ...(deliveryErrors?.length ? { deliveryErrors } : {}),
     },
     durationMs: Date.now() - startedAt,
@@ -573,6 +585,24 @@ async function purgeOldRecords(
 // ─────────────────────────────────────────────────────────────────────────────
 // Watchdog do webhook
 // ─────────────────────────────────────────────────────────────────────────────
+
+/** Eventos recebidos na ultima hora que nao foram associados a nenhuma instancia. */
+async function orphanEventCount(
+  supabase: Awaited<ReturnType<typeof createServiceClient>>
+): Promise<number> {
+  const since = new Date(Date.now() - 60 * 60_000).toISOString()
+  const { count, error } = await supabase
+    .from('webhook_events')
+    .select('id', { count: 'exact', head: true })
+    .is('instance_id', null)
+    .gte('received_at', since)
+
+  if (error) {
+    console.warn('[monitor] contagem de eventos orfaos falhou:', error.message)
+    return 0
+  }
+  return count ?? 0
+}
 
 /**
  * Minutos desde a ultima ENTREGA de webhook de qualquer tipo (tabela de
