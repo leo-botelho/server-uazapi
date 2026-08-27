@@ -5,6 +5,51 @@ Registrar aqui toda implementação, fix e decisão técnica relevante ao final 
 
 ---
 
+## 2026-08-27 (2) — CAUSA RAIZ: migration 009 pendente quebrava TODA gravacao de status
+
+Sintomas relatados: (a) conectou o WhatsApp numa instancia e o painel nao mudou; (b) renomeou uma
+instancia no painel do uazapiGO e o nome nao mudou aqui.
+
+**Causa raiz — uma so para os dois:**
+```
+Could not find the 'last_seen_at' column of 'instances' in the schema cache
+```
+A migration 009 nunca foi aplicada no Supabase. O PostgREST recusa a operacao INTEIRA quando um
+campo do payload nao existe — e `last_seen_at` tinha entrado em TODOS os caminhos de escrita de
+status: webhook, monitor e portal do cliente. Os tres falhavam.
+O "Sincronizar" seguia funcionando por ser o unico caminho que nao toca nessa coluna.
+Isso explica com precisao o padrao "so atualiza quando clico em Sincronizar".
+
+O erro estava invisivel porque o update do caminho sem mudanca de status nao checava o retorno.
+Dois ticks seguidos reportando `renamed: 2` foram a pista: se a gravacao tivesse funcionado, o
+segundo tick mostraria zero.
+
+**Correcoes desta rodada:**
+- `lib/db-resilient.ts` — detecta a coluna ausente pela mensagem do PostgREST, remove do payload e
+  repete, logando alto. Gravar o status sem o campo novo e muito melhor que nao gravar nada.
+  Aplicado no webhook, monitor (status, drift, reparo de token), portal do cliente e
+  `notifications_log` (onde `reason`/`scheduled_for` sofriam do mesmo mal).
+- **Nome da instancia passa a ser sincronizado.** Sem mudanca de status o monitor so carimbava
+  `last_seen_at`, entao renomear no uazapiGO nunca chegava. Perfil e foto idem.
+  Confirmado em producao: `renamed: 2` -> `renamed: 0` no tick seguinte.
+- **Reparo de token divergente no monitor**, igual ao que o sync ja fazia. O monitor casava
+  instancia SO por token; se o token guardado divergia, a instancia ficava invisivel para o monitor
+  E para o webhook (que tambem busca por token). Agora recupera pelo nome — apenas quando o nome e
+  inequivoco dos dois lados — e corrige o token.
+- **Novos sinais no tick:** `repaired`, `renamed`, `orphans` (existem no uazapiGO e nao no painel),
+  `driftErrors` e `webhook.orphanEvents` (eventos que chegam e nao encontram dono — assinatura de
+  token divergente).
+
+**Licao:** nunca usar coluna nova em caminho critico sem fallback enquanto a migration for um passo
+manual pendente. O modo de falha foi silencioso e total.
+
+**AINDA PENDENTE — aplicar no Supabase:**
+- `009_hibernated_and_alert_reliability.sql` — sem ela `hibernated` continua REJEITADO (falso
+  verde) e `last_seen_at` segue sendo descartado a cada gravacao.
+- `010_webhook_heartbeat.sql` — watchdog nao distingue canal morto de canal ocioso.
+
+---
+
 ## 2026-08-27 — Instancia reconectou e o painel so atualizou no sync manual
 
 **Sintoma:** cliente reconectou; o painel so refletiu quando o operador clicou em "Sincronizar".
