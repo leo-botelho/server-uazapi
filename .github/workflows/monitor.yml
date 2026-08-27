@@ -18,8 +18,11 @@ name: Monitor de instâncias
 
 on:
   schedule:
-    # A cada 5 minutos.
-    - cron: '*/5 * * * *'
+    # Backup de meia em meia hora. O agendamento principal e o Cron Trigger do
+    # Cloudflare (workers/monitor-cron), que dispara a cada 2 min com pontualidade.
+    # O cron do GitHub e best-effort: na pratica os ticks de 5 min sairam de hora
+    # em hora, com lacunas de ate 7h30, e uma instancia reconectou numa delas.
+    - cron: '*/30 * * * *'
   workflow_dispatch:   # permite rodar manualmente pela aba Actions
 
 # Se um tick anterior ainda estiver rodando, não empilha outro.

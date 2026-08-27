@@ -52,3 +52,18 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      # Worker dedicado so para o Cron Trigger. O worker principal e gerado
+      # pelo OpenNext e exporta apenas `fetch`, entao nao aceita cron; e o
+      # agendador do GitHub Actions atrasava horas na pratica.
+      - name: Deploy do worker de cron do monitor
+        run: npx wrangler deploy --config workers/monitor-cron/wrangler.toml
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Secret do worker de cron
+        run: printf '%s' "${{ secrets.MONITOR_SECRET }}" | npx wrangler secret put MONITOR_SECRET --config workers/monitor-cron/wrangler.toml
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

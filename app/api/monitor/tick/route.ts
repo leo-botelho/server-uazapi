@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
-import { createUazapi, uazapi } from '@/lib/uazapi/client'
+import { createUazapi, uazapi, normalizeSecret } from '@/lib/uazapi/client'
 import type { UazapiClient } from '@/lib/uazapi/client'
-import { isInstanceStatus, isOffline, type InstanceStatus } from '@/lib/uazapi/types'
+import { isInstanceStatus, isOffline, type InstanceStatus, type GlobalWebhookConfig } from '@/lib/uazapi/types'
 import { handleStatusTransition, flushPendingAlerts, type AlertInstance } from '@/lib/notifications'
 
 /**
@@ -124,14 +124,13 @@ async function runTick(request: NextRequest): Promise<NextResponse> {
   const webhookHealthy   = webhookSilentFor === null || webhookSilentFor < WEBHOOK_SILENCE_ALERT_MINUTES
 
   if (!webhookHealthy) {
-    console.warn(
-      `[monitor] ⚠️ Nenhum evento de webhook há ${webhookSilentFor} min. ` +
-      'O webhook global pode estar desativado ou apontando para a URL errada — ' +
-      'verifique /settings e GET /globalwebhook/errors.'
-    )
+    console.warn(`[monitor] ⚠️ Nenhum evento de webhook há ${webhookSilentFor} min.`)
   }
 
-  // ── 5. Retenção: as tabelas de log cresciam para sempre ───────────────────
+  // ── 5. Auto-correcao do webhook global ────────────────────────────────────
+  const webhookFix = await ensureGlobalWebhook(targets, webhookSilentFor)
+
+  // ── 6. Retenção: as tabelas de log cresciam para sempre ───────────────────
   const purged = await purgeOldRecords(supabase)
 
   const summary = {
@@ -145,6 +144,7 @@ async function runTick(request: NextRequest): Promise<NextResponse> {
     webhook: {
       healthy: webhookHealthy,
       lastEventMinutesAgo: webhookSilentFor,
+      autofix: webhookFix,
     },
     durationMs: Date.now() - startedAt,
     ...(errors.length ? { errors } : {}),
@@ -322,6 +322,108 @@ async function reconcileServer(
   }
 
   return { checked, changed, alerted }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Auto-correcao do webhook global
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Garante que o webhook global do uazapiGO aponta para o receptor deste painel
+ * e esta ativo.
+ *
+ * Motivo: o webhook global e o unico canal em tempo real do painel, e ele ja
+ * ficou 38 horas mudo sem ninguem perceber — ora `enabled: false` (o servidor
+ * desativa sozinho apos falhas de entrega), ora apontando para outra URL. O
+ * resultado pratico foi uma instancia reconectar e o painel so refletir isso
+ * quando alguem clicou em "Sincronizar".
+ *
+ * ⚠️ Mexe SOMENTE no webhook GLOBAL (admintoken). Os webhooks por instancia
+ * pertencem aos agentes de IA no n8n e nunca sao tocados.
+ *
+ * Desligue com MONITOR_AUTOFIX_WEBHOOK=false caso o webhook global passe a ser
+ * usado por outro consumidor.
+ */
+async function ensureGlobalWebhook(
+  targets: ServerTarget[],
+  webhookSilentFor: number | null
+): Promise<{ checked: boolean; action: string; detail?: string }> {
+  if (process.env.MONITOR_AUTOFIX_WEBHOOK === 'false') {
+    return { checked: false, action: 'disabled_by_config' }
+  }
+
+  const appUrl = normalizeSecret(process.env.NEXT_PUBLIC_APP_URL)
+  if (!appUrl) {
+    return { checked: false, action: 'skipped', detail: 'NEXT_PUBLIC_APP_URL ausente' }
+  }
+
+  const receiver = `${appUrl.replace(/\/$/, '')}/api/webhook`
+  const target   = targets[0]
+  if (!target) return { checked: false, action: 'skipped', detail: 'nenhum servidor' }
+
+  try {
+    const configs = await target.client.getGlobalWebhook()
+    const current = configs[0] ?? null
+
+    const pointsHere  = normalizeSecret(current?.url ?? '') === normalizeSecret(receiver)
+    const isEnabled   = current?.enabled === true
+    const hasConnection = (current?.events ?? []).includes('connection')
+
+    // Ja esta correto: nao mexe.
+    if (current && pointsHere && isEnabled && hasConnection) {
+      return { checked: true, action: 'ok' }
+    }
+
+    // Aponta para outro destino E esta funcionando: nao sequestra a configuracao
+    // de outra pessoa so porque este painel nao esta recebendo. So intervem
+    // quando o webhook esta claramente inutil (ausente, desativado, ou sem o
+    // evento connection) ou quando ja faz muito tempo que nada chega aqui.
+    const silentTooLong = webhookSilentFor === null || webhookSilentFor >= WEBHOOK_SILENCE_ALERT_MINUTES
+    if (current && !pointsHere && isEnabled && hasConnection && !silentTooLong) {
+      return {
+        checked: true,
+        action: 'left_alone',
+        detail: `webhook global aponta para ${current.url} e esta ativo`,
+      }
+    }
+
+    // Preserva os eventos ja configurados e garante `connection`.
+    const events = Array.from(new Set([...(current?.events ?? []), 'connection'])) as GlobalWebhookConfig['events']
+
+    const desired: GlobalWebhookConfig = {
+      url: receiver,
+      enabled: true,
+      events,
+      ...(current?.excludeMessages ? { excludeMessages: current.excludeMessages } : {}),
+    }
+
+    console.warn(
+      `[monitor] corrigindo webhook global — antes: url=${current?.url ?? '(nenhum)'} ` +
+      `enabled=${String(current?.enabled)} events=${(current?.events ?? []).join(',') || '(nenhum)'}`
+    )
+
+    await target.client.setGlobalWebhook(desired)
+
+    // Confirma o que o servidor de fato gravou.
+    const after = (await target.client.getGlobalWebhook())[0] ?? null
+
+    if (after?.enabled === true && normalizeSecret(after.url ?? '') === normalizeSecret(receiver)) {
+      console.log('[monitor] webhook global corrigido e ativo')
+      return { checked: true, action: 'fixed' }
+    }
+
+    return {
+      checked: true,
+      action: 'fix_failed',
+      detail: `apos salvar: url=${after?.url ?? '(nenhum)'} enabled=${String(after?.enabled)}`,
+    }
+  } catch (err) {
+    return {
+      checked: true,
+      action: 'error',
+      detail: err instanceof Error ? err.message : String(err),
+    }
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

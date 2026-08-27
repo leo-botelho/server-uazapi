@@ -1,0 +1,14 @@
+name = "server-uazapi-monitor-cron"
+main = "index.js"
+compatibility_date = "2025-05-01"
+
+# A cada 2 minutos. Cron Triggers do Cloudflare sao pontuais — diferente do
+# agendador do GitHub Actions, que atrasava horas.
+[triggers]
+crons = ["*/2 * * * *"]
+
+[vars]
+MONITOR_URL = "https://server.smartskillshub.com.br/api/monitor/tick"
+
+[observability.logs]
+enabled = true
