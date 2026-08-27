@@ -106,6 +106,24 @@ export type Database = {
         }
         Relationships: []
       }
+      webhook_heartbeat: {
+        Row: {
+          id: boolean
+          last_event_at: string
+          last_event_type: string | null
+        }
+        Insert: {
+          id?: boolean
+          last_event_at?: string
+          last_event_type?: string | null
+        }
+        Update: {
+          id?: boolean
+          last_event_at?: string
+          last_event_type?: string | null
+        }
+        Relationships: []
+      }
       instances: {
         Row: {
           id: string

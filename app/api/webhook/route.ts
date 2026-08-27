@@ -54,6 +54,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     `instanceStatus="${(raw['instance'] as Record<string, unknown>)?.['status'] ?? '?'}"`
   )
 
+  // Registra o batimento ANTES de filtrar por tipo. Sem isso o watchdog media
+  // "tempo desde o ultimo evento connection" e nao distinguia webhook morto de
+  // webhook entregando normalmente sem nenhuma mudanca de estado.
+  const heartbeatClient = await createServiceClient()
+  after(async () => {
+    const { error } = await heartbeatClient.from('webhook_heartbeat').upsert({
+      id: true,
+      last_event_at: new Date().toISOString(),
+      last_event_type: eventType || 'desconhecido',
+    })
+    if (error) console.error('[webhook] falha ao registrar batimento:', error.message)
+  })
+
   // Only care about connection events for status monitoring.
   if (eventType !== 'connection') {
     return NextResponse.json({ received: true })

@@ -120,11 +120,41 @@ async function runTick(request: NextRequest): Promise<NextResponse> {
   }
 
   // ── 4. Watchdog do webhook ────────────────────────────────────────────────
-  const webhookSilentFor = await webhookSilenceMinutes(supabase)
-  const webhookHealthy   = webhookSilentFor === null || webhookSilentFor < WEBHOOK_SILENCE_ALERT_MINUTES
+  // `deliveryAgo` = qualquer entrega (batimento); `connectionAgo` = so eventos
+  // de conexao. Separar os dois distingue "webhook morto" de "webhook vivo, sem
+  // mudanca de estado" — antes os dois eram o mesmo numero e enganavam.
+  const [deliveryAgo, connectionAgo] = await Promise.all([
+    lastDeliveryMinutes(supabase),
+    webhookSilenceMinutes(supabase),
+  ])
+
+  const webhookHealthy = deliveryAgo !== null && deliveryAgo < WEBHOOK_SILENCE_ALERT_MINUTES
+  const webhookSilentFor = deliveryAgo
+
+  // Quando esta mudo, pergunta ao proprio uazapiGO por que as entregas falham.
+  let deliveryErrors: Array<{ status?: number; error?: string; created?: string }> | undefined
+  if (!webhookHealthy && targets[0]) {
+    try {
+      const errs = await targets[0].client.getGlobalWebhookErrors()
+      deliveryErrors = errs.slice(0, 5).map((e) => ({
+        status:  e.status_code,
+        error:   e.error?.slice(0, 200),
+        created: e.created,
+      }))
+      if (deliveryErrors.length) {
+        console.warn('[monitor] erros de entrega do webhook global:', JSON.stringify(deliveryErrors))
+      }
+    } catch (err) {
+      console.warn('[monitor] nao foi possivel ler /globalwebhook/errors:',
+        err instanceof Error ? err.message : String(err))
+    }
+  }
 
   if (!webhookHealthy) {
-    console.warn(`[monitor] ⚠️ Nenhum evento de webhook há ${webhookSilentFor} min.`)
+    console.warn(
+      `[monitor] ⚠️ Nenhuma entrega de webhook ha ${deliveryAgo ?? 'sempre'} min ` +
+      `(ultimo evento de conexao ha ${connectionAgo ?? 'sempre'} min).`
+    )
   }
 
   // ── 5. Auto-correcao do webhook global ────────────────────────────────────
@@ -143,8 +173,10 @@ async function runTick(request: NextRequest): Promise<NextResponse> {
     purged,
     webhook: {
       healthy: webhookHealthy,
-      lastEventMinutesAgo: webhookSilentFor,
+      lastDeliveryMinutesAgo: deliveryAgo,
+      lastConnectionEventMinutesAgo: connectionAgo,
       autofix: webhookFix,
+      ...(deliveryErrors?.length ? { deliveryErrors } : {}),
     },
     durationMs: Date.now() - startedAt,
     ...(errors.length ? { errors } : {}),
@@ -472,7 +504,30 @@ async function purgeOldRecords(
 // Watchdog do webhook
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Minutos desde o último evento de webhook recebido, ou null se nunca houve. */
+/**
+ * Minutos desde a ultima ENTREGA de webhook de qualquer tipo (tabela de
+ * batimento). null = nenhuma entrega registrada desde que a tabela existe.
+ */
+async function lastDeliveryMinutes(
+  supabase: Awaited<ReturnType<typeof createServiceClient>>
+): Promise<number | null> {
+  const { data, error } = await supabase
+    .from('webhook_heartbeat')
+    .select('last_event_at')
+    .eq('id', true)
+    .maybeSingle()
+
+  // Migration 010 ainda nao aplicada: cai para o sinal antigo em vez de quebrar.
+  if (error) {
+    console.warn('[monitor] webhook_heartbeat indisponivel:', error.message)
+    return webhookSilenceMinutes(supabase)
+  }
+
+  if (!data?.last_event_at) return null
+  return Math.floor((Date.now() - new Date(data.last_event_at).getTime()) / 60_000)
+}
+
+/** Minutos desde o último evento de CONEXÃO recebido, ou null se nunca houve. */
 async function webhookSilenceMinutes(
   supabase: Awaited<ReturnType<typeof createServiceClient>>
 ): Promise<number | null> {
