@@ -4,6 +4,7 @@ import { createUazapi, uazapi, normalizeSecret } from '@/lib/uazapi/client'
 import type { UazapiClient } from '@/lib/uazapi/client'
 import { isInstanceStatus, isOffline, type InstanceStatus, type GlobalWebhookConfig } from '@/lib/uazapi/types'
 import { handleStatusTransition, flushPendingAlerts, type AlertInstance } from '@/lib/notifications'
+import { withMissingColumnFallback } from '@/lib/db-resilient'
 
 /**
  * POST/GET /api/monitor/tick — monitor ativo (rede de segurança).
@@ -327,10 +328,11 @@ async function reconcileServer(
     if (!row) {
       const candidate = byName.get(inst.name)
       if (candidate && !byToken.has(candidate.uazapi_token === token ? '' : token)) {
-        const { error: repairError } = await supabase
-          .from('instances')
-          .update({ uazapi_token: token, last_seen_at: now })
-          .eq('id', candidate.id)
+        const { error: repairError } = await withMissingColumnFallback(
+          { uazapi_token: token, last_seen_at: now },
+          (p) => supabase.from('instances').update(p).eq('id', candidate.id),
+          `reparo de token de "${inst.name}"`
+        )
 
         if (repairError) {
           console.error(`[monitor] falha ao reparar token de "${inst.name}":`, repairError.message)
@@ -385,10 +387,11 @@ async function reconcileServer(
     if (remotePicture !== null) drift.profile_picture = remotePicture
 
     if (newStatus === previousStatus) {
-      const { error: driftError } = await supabase
-        .from('instances')
-        .update(drift)
-        .eq('id', row.id)
+      const { error: driftError } = await withMissingColumnFallback(
+        drift,
+        (p) => supabase.from('instances').update(p).eq('id', row.id),
+        `drift de "${row.name}"`
+      )
 
       // Este erro era engolido: o nome nunca era gravado e todo tick voltava a
       // reportar a mesma instancia como renomeada.
@@ -418,12 +421,16 @@ async function reconcileServer(
 
     // Compare-and-set: se o webhook aplicou a mesma mudanca enquanto isso, ele
     // ja cuidou do alerta e este ciclo nao deve notificar de novo.
-    const { data: updated, error: updateError } = await supabase
-      .from('instances')
-      .update(updatePayload)
-      .eq('id', row.id)
-      .eq('status', previousStatus)
-      .select('id')
+    const { data: updated, error: updateError } = await withMissingColumnFallback<{ id: string }[], typeof updatePayload>(
+      updatePayload,
+      (p) => supabase
+        .from('instances')
+        .update(p)
+        .eq('id', row.id)
+        .eq('status', previousStatus)
+        .select('id'),
+      `status de "${row.name}"`
+    )
 
     if (updateError) {
       console.error(`[monitor] falha ao atualizar "${row.name}":`, updateError.message)

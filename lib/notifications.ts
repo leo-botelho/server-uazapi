@@ -2,6 +2,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { getInstanceClient } from '@/lib/api-helpers'
 import { isOffline, type InstanceStatus } from '@/lib/uazapi/types'
 import { normalizeSecret } from '@/lib/uazapi/client'
+import { withMissingColumnFallback } from '@/lib/db-resilient'
 
 /**
  * Disparo de alertas de queda de instância.
@@ -433,16 +434,22 @@ async function logNotification(
     scheduledFor?: string | null
   }
 ): Promise<void> {
-  const { error } = await supabase.from('notifications_log').insert({
-    instance_id:   entry.instanceId,
-    channel:       entry.channel,
-    status:        entry.status,
-    recipient:     entry.recipient    ?? null,
-    error:         entry.error        ?? null,
-    reason:        entry.reason       ?? null,
-    sent_at:       entry.sentAt       ?? null,
-    scheduled_for: entry.scheduledFor ?? null,
-  })
+  // `reason` e `scheduled_for` vem da migration 009: se ela ainda nao rodou, o
+  // registro e gravado sem esses campos em vez de se perder por completo.
+  const { error } = await withMissingColumnFallback(
+    {
+      instance_id:   entry.instanceId,
+      channel:       entry.channel,
+      status:        entry.status,
+      recipient:     entry.recipient    ?? null,
+      error:         entry.error        ?? null,
+      reason:        entry.reason       ?? null,
+      sent_at:       entry.sentAt       ?? null,
+      scheduled_for: entry.scheduledFor ?? null,
+    },
+    (p) => supabase.from('notifications_log').insert(p),
+    'registro de notificacao'
+  )
 
   if (error) console.error('[notify] falha ao registrar notificação:', error.message)
 }

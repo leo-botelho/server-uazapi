@@ -3,6 +3,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { isInstanceStatus, type InstanceStatus } from '@/lib/uazapi/types'
 import { handleStatusTransition, type AlertInstance } from '@/lib/notifications'
 import type { Json } from '@/types/database'
+import { withMissingColumnFallback } from '@/lib/db-resilient'
 
 // Public endpoint — no auth, no middleware cookie handling.
 // uazapiGO must be able to reach this without credentials.
@@ -182,12 +183,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   // Compare-and-set: só grava se o status no banco ainda for o que lemos.
   // Dois webhooks concorrentes (retry do uazapiGO) chegavam a notificar duas vezes.
-  const { data: updated, error: updateError } = await supabase
-    .from('instances')
-    .update(updatePayload)
-    .eq('id', instance.id)
-    .eq('status', previousStatus)
-    .select('id')
+  const { data: updated, error: updateError } = await withMissingColumnFallback<{ id: string }[], typeof updatePayload>(
+    updatePayload,
+    (p) => supabase
+      .from('instances')
+      .update(p)
+      .eq('id', instance.id)
+      .eq('status', previousStatus)
+      .select('id'),
+    `status de "${instance.name}"`
+  )
 
   if (updateError) {
     console.error('[webhook] Failed to update instance status:', updateError.message)

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { getInstanceClient } from '@/lib/api-helpers'
 import { isInstanceStatus, type InstanceStatus } from '@/lib/uazapi/types'
+import { withMissingColumnFallback } from '@/lib/db-resilient'
 
 // Público — consultado em polling pelos componentes do cliente.
 //
@@ -89,10 +90,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         payload.last_disconnected_at = now
       }
 
-      const { error: updateError } = await supabase
-        .from('instances')
-        .update(payload)
-        .eq('id', instanceId)
+      const { error: updateError } = await withMissingColumnFallback(
+        payload,
+        (p) => supabase.from('instances').update(p).eq('id', instanceId),
+        'status no portal do cliente'
+      )
 
       if (updateError) console.error('[connect/status] update falhou:', updateError.message)
 
@@ -106,7 +108,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           .is('used_at', null)
       }
     } else {
-      await supabase.from('instances').update({ last_seen_at: now }).eq('id', instanceId)
+      await withMissingColumnFallback(
+        { last_seen_at: now },
+        (p) => supabase.from('instances').update(p).eq('id', instanceId),
+        'last_seen_at no portal do cliente'
+      )
     }
 
     return NextResponse.json({
