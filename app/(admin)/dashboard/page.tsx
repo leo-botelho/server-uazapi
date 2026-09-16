@@ -5,6 +5,8 @@ import { InstanceTable } from '@/components/admin/instance-table'
 import { InstanceStatusLive } from '@/components/admin/instance-status-live'
 import { SyncInstancesButton } from '@/app/(admin)/instances/sync-button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { AiCostsSection } from '@/components/admin/ai-costs-section'
+import { parsePeriod } from '@/lib/ai-costs-period'
 import {
   Smartphone,
   CheckCircle,
@@ -102,7 +104,27 @@ function TableLoading() {
   )
 }
 
-export default function DashboardPage() {
+function CostsLoading() {
+  return (
+    <div className="space-y-4">
+      <Skeleton className="h-12 w-full" />
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-24" />
+        ))}
+      </div>
+      <Skeleton className="h-64 w-full" />
+    </div>
+  )
+}
+
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
+}) {
+  const period = parsePeriod((await searchParams).gastos)
+
   return (
     <div className="space-y-6">
       {/*
@@ -125,6 +147,12 @@ export default function DashboardPage() {
 
       <Suspense fallback={<StatsLoading />}>
         <DashboardStats />
+      </Suspense>
+
+      {/* key pelo periodo: ao trocar o filtro o esqueleto aparece em vez de
+          manter os numeros do periodo anterior na tela enquanto carrega */}
+      <Suspense key={period} fallback={<CostsLoading />}>
+        <AiCostsSection period={period} />
       </Suspense>
 
       <div>

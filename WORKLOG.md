@@ -5,6 +5,68 @@ Registrar aqui toda implementação, fix e decisão técnica relevante ao final 
 
 ---
 
+## 2026-09-16 — Gastos com IA por agente no dashboard
+
+Origem: `C:/Users/raque/dev/Agentes de IA/token-usage-schema-supabase.sql` + workflow
+`Coleta de Tokens.json` (o escritor dessas tabelas).
+
+### Migration 011 (`supabase/migrations/011_token_usage.sql`)
+Mantem as 3 tabelas e os nomes das 3 views do script original, com correcoes:
+1. **RLS ligada.** O original criava as tabelas sem RLS: no Supabase isso deixa leitura E escrita
+   abertas para a chave anon via PostgREST — telefones dos clientes finais (`session_id`) e
+   `model_pricing` regravavel. Agora so admin autenticado le; ninguem escreve via API.
+   O coletor grava como dono das tabelas por conexao Postgres direta, entao nao e afetado.
+2. **Views com `security_invoker`.** View comum roda com privilegio do dono e ignora RLS.
+3. **Dia no fuso de Brasilia.** `date_trunc('day')` usava UTC: gasto das 21h-0h caia no dia seguinte.
+4. **`executed_at`** (nova, opcional): tudo usa `coalesce(executed_at, collected_at)`. Ate o coletor
+   preencher, o dia e o da coleta, nao o da execucao.
+5. **Precos nao sao sobrescritos** ao reexecutar: so preenche modelo novo ou zerado.
+6. **Funcoes `token_cost_por_agente` e `token_cost_diario`** para agregar no banco (somar no Next
+   bateria no limite de 1000 linhas do PostgREST e mostraria total menor, sem erro).
+
+Verificada no PGlite (Postgres 17 em WASM) com 27 checagens: idempotencia, custo exato, fuso,
+intervalo semiaberto, modelo sem preco, anon bloqueado, UPDATE/INSERT via API bloqueados, view
+respeitando RLS. O teste ficou no scratchpad da sessao, nao no repo.
+
+### Dashboard
+- `lib/ai-costs-period.ts` (puro, 19 testes) — periodos em Brasilia: mes atual (compara com o mesmo
+  trecho do mes anterior, limitado em meses curtos), 7d e 30d (comparam com janela igual anterior).
+- `lib/ai-costs.ts` — 3 RPCs em paralelo; detecta migration ausente (PGRST202/42883/42P01) e devolve
+  `not_installed` em vez de quebrar o dashboard.
+- `components/admin/ai-costs-section.tsx` — Server Component sem JS no cliente; filtro por link
+  (`?gastos=mes|7d|30d`). KPIs (gasto + variacao, projecao do mes a partir do 3o dia ou media diaria,
+  custo por execucao, tokens), grafico diario empilhado (top 5; acima disso top 4 + "Outros"), tabela
+  por agente, alerta de **modelo sem preco** (total subestimado) e de **agente que parou de consumir**
+  (gastou no periodo anterior e zero agora — costuma ser agente fora do ar).
+- Verificado visualmente com dados ficticios (pagina temporaria, removida antes do commit) em 1024px
+  e 375px: sem rolagem horizontal na pagina, tabela rola dentro do card, rotulos do eixo dentro do
+  grafico. Estados vazio, erro e nao instalado conferidos.
+
+### Fix colateral: recarga em rajada do dashboard
+`components/admin/instance-status-live.tsx` chamava `router.refresh()` em TODO update de `instances`
+(o comentario dizia "so status", mas o filtro era `undefined`). Com o monitor gravando todas as
+instancias a cada 2 min, cada aba aberta recarregava a pagina inteira ~7 vezes seguidas. Agora so
+recarrega se mudar coluna visivel (status, nome, telefone, cliente, ativo) e agrupa a rajada (800 ms).
+
+### PENDENTE — problemas no workflow "Coleta de Tokens" (nao alterado, decisao do usuario)
+1. **O cabecalho do SQL original manda mover "Atualiza Watermark" para o Supabase — isso quebra o
+   coletor.** Essa query le `execution_entity`/`workflow_entity` e grava `token_usage_sync_state` no
+   mesmo comando, e "Busca Pendentes" faz JOIN com `token_usage_sync_state`. As duas precisam do banco
+   do n8n. So "Grava Uso" pode apontar para o Supabase; o watermark fica no banco do n8n.
+2. **Watermark pula execucoes (subcontagem).** "Atualiza Watermark" grava `MAX(e.id)` de TODAS as
+   execucoes finalizadas, nao do lote processado. Com o `LIMIT` de "Busca Pendentes", tudo alem do lote
+   e pulado para sempre; execucoes que terminam entre as duas queries tambem. Correcao: limitar ao
+   maior id do lote (`AND e.id <= <max id processado>`).
+3. **`finished = true` ignora execucoes com erro** que ja tinham chamado o modelo: token gasto e nunca
+   contado. Considerar `status in ('success','error')`.
+4. **`executed_at` nao e preenchido.** Passar `startedAt` da execucao em "Extrai Tokens"/"Grava Uso".
+
+### Para funcionar em producao
+- Aplicar `011_token_usage.sql` no SQL Editor do Supabase (e 009/010, se ainda nao aplicadas).
+- No n8n, apontar **apenas** "Grava Uso" para a connection string do Supabase.
+
+---
+
 ## 2026-08-27 (2) — CAUSA RAIZ: migration 009 pendente quebrava TODA gravacao de status
 
 Sintomas relatados: (a) conectou o WhatsApp numa instancia e o painel nao mudou; (b) renomeou uma

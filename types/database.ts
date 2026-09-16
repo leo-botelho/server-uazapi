@@ -316,12 +316,134 @@ export type Database = {
           }
         ]
       }
+      // ── Consumo de tokens de IA (migration 011) ─────────────────────────
+      token_usage_log: {
+        Row: {
+          id: number
+          execution_id: number
+          workflow_id: string
+          workflow_name: string
+          node_name: string
+          node_type: string
+          provider: string
+          model: string | null
+          session_id: string | null
+          prompt_tokens: number
+          completion_tokens: number
+          total_tokens: number
+          call_count: number
+          collected_at: string
+          executed_at: string | null
+        }
+        Insert: {
+          id?: number
+          execution_id: number
+          workflow_id: string
+          workflow_name: string
+          node_name: string
+          node_type: string
+          provider: string
+          model?: string | null
+          session_id?: string | null
+          prompt_tokens?: number
+          completion_tokens?: number
+          total_tokens?: number
+          call_count?: number
+          collected_at?: string
+          executed_at?: string | null
+        }
+        Update: {
+          id?: number
+          execution_id?: number
+          workflow_id?: string
+          workflow_name?: string
+          node_name?: string
+          node_type?: string
+          provider?: string
+          model?: string | null
+          session_id?: string | null
+          prompt_tokens?: number
+          completion_tokens?: number
+          total_tokens?: number
+          call_count?: number
+          collected_at?: string
+          executed_at?: string | null
+        }
+        Relationships: []
+      }
+      model_pricing: {
+        Row: {
+          model: string
+          price_input_per_1m: number
+          price_output_per_1m: number
+          updated_at: string
+        }
+        Insert: {
+          model: string
+          price_input_per_1m?: number
+          price_output_per_1m?: number
+          updated_at?: string
+        }
+        Update: {
+          model?: string
+          price_input_per_1m?: number
+          price_output_per_1m?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      token_usage_sync_state: {
+        Row: {
+          workflow_id: string
+          workflow_name: string | null
+          last_execution_id: number
+          updated_at: string
+        }
+        Insert: {
+          workflow_id: string
+          workflow_name?: string | null
+          last_execution_id?: number
+          updated_at?: string
+        }
+        Update: {
+          workflow_id?: string
+          workflow_name?: string | null
+          last_execution_id?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      token_cost_por_agente: {
+        Args: { p_desde: string; p_ate: string }
+        Returns: {
+          workflow_name: string
+          custo_usd: number
+          prompt_tokens: number
+          completion_tokens: number
+          total_tokens: number
+          chamadas: number
+          execucoes: number
+          conversas: number
+          tokens_sem_preco: number
+          modelos: string[]
+          modelos_sem_preco: string[]
+          ultima_execucao: string | null
+        }[]
+      }
+      token_cost_diario: {
+        Args: { p_desde: string; p_ate: string }
+        Returns: {
+          dia: string
+          workflow_name: string
+          custo_usd: number
+          total_tokens: number
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never
