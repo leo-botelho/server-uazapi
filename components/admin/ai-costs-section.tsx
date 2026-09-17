@@ -444,10 +444,10 @@ export function AiCostsView({ period, result }: { period: PeriodKey; result: Cos
                 <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">supabase/migrations/011_token_usage.sql</code>.
               </li>
               <li>
-                No n8n, aponte <strong>apenas</strong> o nó <strong>Grava Uso</strong> do workflow{' '}
-                <strong>Coleta de Tokens</strong> para a connection string deste Supabase. Os nós que
-                leem <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">execution_entity</code>{' '}
-                continuam no banco do n8n.
+                No n8n, importe o workflow <strong>Coleta de Tokens</strong> atualizado e aponte a
+                credencial deste Supabase nos nós <strong>Le Watermark</strong>, <strong>Grava Uso</strong>{' '}
+                e <strong>Atualiza Watermark</strong>. Só <strong>Busca Pendentes</strong> continua no
+                banco interno do n8n.
               </li>
               <li>Aguarde a próxima rodada do coletor (a cada hora).</li>
             </ol>

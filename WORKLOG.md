@@ -5,6 +5,30 @@ Registrar aqui toda implementação, fix e decisão técnica relevante ao final 
 
 ---
 
+## 2026-09-17 — Workflow "Coleta de Tokens" corrigido (pendencias de 2026-09-16)
+
+Arquivo: `C:/Users/raque/dev/Agentes de IA/Coleta de Tokens.json` (backup do original em
+`Agentes de IA/_backup-20260917/`). Historico detalhado no `WORKLOG.md` daquela pasta.
+
+Resolve as 4 pendencias registradas em 2026-09-16 e mais uma encontrada ao ler o workflow:
+1. **Bancos cruzados:** watermark passou a morar so no Supabase. No novo "Le Watermark" (Supabase)
+   devolve a lista em JSON e "Busca Pendentes" (banco do n8n) usa via `jsonb_to_recordset`. Nenhuma
+   query precisa enxergar os dois bancos; nenhuma tabela nossa fica no banco interno do n8n.
+2. **Watermark pulando execucoes:** agora avanca ate o maior id DO LOTE (com `GREATEST`, nunca volta)
+   e nao passa de execucao ainda em andamento do mesmo workflow.
+3. **Execucoes com erro** (`error`/`crashed`/`canceled`) passam a ser contadas.
+4. **`executed_at`** preenchido com `startedAt` da execucao.
+5. **Erro da API mascarado:** "Busca Execucao" tem `onError: continueRegularOutput` — correto para
+   404, mas fazia chave de API invalida parecer "execucao nao encontrada" e o coletor seguia sem
+   gravar nada. Novo no "Confere Falha": 404 segue, qualquer outro erro interrompe a rodada.
+
+Validado simulando rodadas contra bancos falsos do n8n e do Supabase (PGlite), com as queries e o
+codigo reais do JSON: 21 checagens. Nao foi executado num n8n real.
+
+Dashboard: instrucao de instalacao atualizada para os 3 nos que usam a credencial do Supabase.
+
+---
+
 ## 2026-09-16 (2) — Gastos em reais e dolar + acesso aos dados de custo fechado para a API
 
 Pedido: exibir os gastos de IA em R$ e US$. A cotacao vem da tabela `exchange_rate` (linha unica),
