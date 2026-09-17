@@ -10,9 +10,11 @@
 --    Supabase, tabela no schema public sem RLS fica legivel E gravavel pela
 --    chave anon via PostgREST: qualquer pessoa com essa chave leria os
 --    telefones dos clientes finais (`session_id`) e poderia reescrever
---    `model_pricing`. Agora: RLS ligada, leitura so para admin autenticado,
---    nenhuma escrita via API. O coletor grava por conexao Postgres direta
---    como dono das tabelas, entao nao e afetado.
+--    `model_pricing`. Agora: RLS ligada SEM policy e grants revogados de anon
+--    e authenticated — fechado para a API inteira, como no
+--    `token-usage-schema-supabase-rls.sql`. O painel le pelo servidor com a
+--    service role, depois de confirmar o login do admin. O coletor grava por
+--    conexao Postgres direta como dono das tabelas e nao e afetado.
 --
 -- 2. Views com security_invoker. View comum no Postgres executa com os
 --    privilegios do dono e ignora RLS — ligar RLS nas tabelas nao bastaria.
@@ -121,20 +123,15 @@ alter table token_usage_log        enable row level security;
 alter table token_usage_sync_state enable row level security;
 alter table model_pricing          enable row level security;
 
+-- Sem policy de proposito: RLS ligada sem policy nega tudo a anon e
+-- authenticated. Dado interno — o painel usa a service role no servidor.
+-- Remove a policy de leitura de uma versao anterior desta migration.
 drop policy if exists "admins_select" on token_usage_log;
-create policy "admins_select" on token_usage_log
-  for select to authenticated using (true);
-
 drop policy if exists "admins_select" on token_usage_sync_state;
-create policy "admins_select" on token_usage_sync_state
-  for select to authenticated using (true);
-
 drop policy if exists "admins_select" on model_pricing;
-create policy "admins_select" on model_pricing
-  for select to authenticated using (true);
 
--- Defesa em profundidade: a chave anon nao tem nada a fazer aqui.
-revoke all on table token_usage_log, token_usage_sync_state, model_pricing from anon;
+-- Defesa em profundidade: nao depender so da RLS.
+revoke all on table token_usage_log, token_usage_sync_state, model_pricing from anon, authenticated;
 
 -- ── Views (mesmos nomes do script original) ─────────────────
 
@@ -183,7 +180,7 @@ select
 from v_token_cost_daily
 group by workflow_name;
 
-revoke all on v_token_cost_daily, v_token_cost_daily_resumo, v_token_cost_por_agente from anon;
+revoke all on v_token_cost_daily, v_token_cost_daily_resumo, v_token_cost_por_agente from anon, authenticated;
 
 -- ── Funcoes para o painel ───────────────────────────────────
 
@@ -264,7 +261,8 @@ as $$
   order by 1, 2;
 $$;
 
-revoke execute on function token_cost_por_agente(timestamptz, timestamptz) from public, anon;
-revoke execute on function token_cost_diario(timestamptz, timestamptz)     from public, anon;
-grant  execute on function token_cost_por_agente(timestamptz, timestamptz) to authenticated, service_role;
-grant  execute on function token_cost_diario(timestamptz, timestamptz)     to authenticated, service_role;
+-- So a service role executa: o painel chama pelo servidor apos checar o login.
+revoke execute on function token_cost_por_agente(timestamptz, timestamptz) from public, anon, authenticated;
+revoke execute on function token_cost_diario(timestamptz, timestamptz)     from public, anon, authenticated;
+grant  execute on function token_cost_por_agente(timestamptz, timestamptz) to service_role;
+grant  execute on function token_cost_diario(timestamptz, timestamptz)     to service_role;

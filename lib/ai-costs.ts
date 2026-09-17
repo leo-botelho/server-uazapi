@@ -1,6 +1,7 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import type { Database } from '@/types/database'
 import { DAY_MS, resolvePeriod, type PeriodKey, type ResolvedPeriod } from '@/lib/ai-costs-period'
+import { evaluateFx, type FxInfo } from '@/lib/ai-costs-fx'
 
 export { PERIODS, parsePeriod, type PeriodKey } from '@/lib/ai-costs-period'
 
@@ -13,8 +14,13 @@ export { PERIODS, parsePeriod, type PeriodKey } from '@/lib/ai-costs-period'
  * no limite de 1000 linhas do PostgREST e mostraria totais MENORES que os reais,
  * sem nenhum erro.
  *
- * Valores em US$ estimados a partir de `model_pricing`. Dias no fuso de
- * Brasilia (UTC-3, sem horario de verao desde 2019).
+ * Valores em US$ estimados a partir de `model_pricing`, convertidos para R$ pela
+ * cotacao de `exchange_rate`. Dias no fuso de Brasilia (UTC-3, sem horario de
+ * verao desde 2019).
+ *
+ * Acesso: as tabelas sao fechadas para a API (RLS sem policy, grants revogados
+ * de anon e authenticated). A leitura usa a service role no servidor — por isso
+ * o login do admin e conferido aqui, antes, e nao delegado ao banco.
  */
 
 type AgentRpcRow = Database['public']['Functions']['token_cost_por_agente']['Returns'][number]
@@ -73,6 +79,7 @@ export type CostsResult =
       daily: DailyBar[]
       missingPrice: { models: string[]; tokens: number }
       lastCollection: string | null
+      fx: FxInfo
     }
 
 /** Maximo de series coloridas: acima disso, o resto vira "Outros". */
@@ -94,16 +101,30 @@ function pctChange(current: number, previous: number): number | null {
 }
 
 export async function loadAiCosts(key: PeriodKey): Promise<CostsResult> {
-  const period   = resolvePeriod(key)
-  const supabase = await createClient()
+  const period = resolvePeriod(key)
 
+  // A service role ignora RLS: so e usada depois de confirmar o admin logado.
+  const session = await createClient()
+  const { data: { user } } = await session.auth.getUser()
+  if (!user) {
+    return { state: 'error', detail: 'Sessão expirada. Entre novamente para ver os gastos.' }
+  }
+
+  const db = await createServiceClient()
   const range = (desde: Date, ate: Date) => ({ p_desde: desde.toISOString(), p_ate: ate.toISOString() })
 
-  const [current, previous, daily] = await Promise.all([
-    supabase.rpc('token_cost_por_agente', range(period.desde, period.ate)),
-    supabase.rpc('token_cost_por_agente', range(period.prevDesde, period.prevAte)),
-    supabase.rpc('token_cost_diario',     range(period.desde, period.ate)),
+  const [current, previous, daily, rate] = await Promise.all([
+    db.rpc('token_cost_por_agente', range(period.desde, period.ate)),
+    db.rpc('token_cost_por_agente', range(period.prevDesde, period.prevAte)),
+    db.rpc('token_cost_diario',     range(period.desde, period.ate)),
+    db.from('exchange_rate').select('usd_to_brl, updated_at').eq('id', 1).maybeSingle(),
   ])
+
+  // Cotacao nunca derruba a secao: sem ela, os valores aparecem so em dolar.
+  if (rate.error) {
+    console.warn('[ai-costs] cotacao indisponivel, exibindo so em dolar:', rate.error.message)
+  }
+  const fx = evaluateFx(rate.error ? null : rate.data)
 
   const firstError = current.error ?? previous.error ?? daily.error
   if (firstError) {
@@ -228,5 +249,6 @@ export async function loadAiCosts(key: PeriodKey): Promise<CostsResult> {
     daily: dailyBars,
     missingPrice: { models: [...missingModels].sort(), tokens: missingTokens },
     lastCollection,
+    fx,
   }
 }

@@ -5,6 +5,51 @@ Registrar aqui toda implementação, fix e decisão técnica relevante ao final 
 
 ---
 
+## 2026-09-16 (2) — Gastos em reais e dolar + acesso aos dados de custo fechado para a API
+
+Pedido: exibir os gastos de IA em R$ e US$. A cotacao vem da tabela `exchange_rate` (linha unica),
+criada manualmente e atualizada por um fluxo do n8n que grava no Supabase.
+
+### Mudanca de modelo de acesso (importante)
+Apareceu `Agentes de IA/token-usage-schema-supabase-rls.sql`: RLS ligada SEM policy e grants revogados
+de `anon` E `authenticated` — decisao explicita de que custo de tokens e dado interno, fora da API.
+A primeira versao do dashboard lia com a sessao do admin (`authenticated`), entao **quebraria com
+"permission denied"** assim que esse arquivo rodasse. Em vez de reabrir o acesso, alinhei com a decisao:
+- **011 editada:** sem a policy `admins_select`, grants revogados de anon e authenticated em tabelas e
+  views, funcoes executaveis so pela `service_role`. Remove a policy caso a versao anterior da 011
+  ja tenha sido aplicada.
+- **`lib/ai-costs.ts`** confere o login do admin e so entao le com `createServiceClient()`. O login e
+  checado no codigo porque a service role ignora RLS.
+- Testado no PGlite nas duas ordens (seu RLS antes e depois das migrations): anon e authenticated
+  negados em tabelas, views, funcoes e `exchange_rate`; service_role le e executa; n8n grava a cotacao
+  tanto pela credencial Supabase (service role) quanto pela Postgres (dono). 34 checagens.
+
+### Migration 012 (`supabase/migrations/012_exchange_rate.sql`)
+Registra a tabela identica a criada (`create table if not exists`, nao toca na cotacao gravada),
+RLS sem policy e grants revogados. Sem isso a chave anon podia GRAVAR uma cotacao falsa.
+**Se o fluxo de cotacao grava via HTTP Request na API REST com a chave anon, ele para depois da 012**
+— trocar pela service role. O aviso de cotacao velha no painel denuncia isso.
+
+### Cotacao (`lib/ai-costs-fx.ts`, puro, 11 testes)
+- Faixa plausivel 1 a 20 reais por dolar. Fora dela NAO converte: abaixo de 1 e quase sempre a cotacao
+  invertida (~0,19), que mostraria os gastos cinco vezes menores.
+- Velha acima de 96 h (folga para fim de semana/feriado, quando a PTAX nao sai): converte, mas avisa.
+- Tabela ausente ou erro de leitura: nunca derruba a secao; valores so em dolar.
+
+### Interface
+- Com cotacao valida, **real e o valor principal** e o dolar aparece embaixo (KPIs, tabela, custo por
+  execucao); eixo do grafico em reais; tooltip e leitor de tela com as duas moedas.
+- Avisos: cotacao desatualizada; cotacao fora do esperado (texto especifico quando parece invertida).
+- Rodape informa a cotacao usada e que periodos passados usam a cotacao ATUAL, nao a do dia do gasto
+  (a tabela guarda so a ultima cotacao).
+- Verificado com dados ficticios nos 5 cenarios (ok, velha, invertida, absurda, sem cotacao) e em 375px.
+
+### Para funcionar em producao
+1. SQL Editor do Supabase: `011_token_usage.sql` e depois `012_exchange_rate.sql`.
+2. Conferir se o fluxo de cotacao do n8n usa a service role ou a conexao Postgres.
+
+---
+
 ## 2026-09-16 — Gastos com IA por agente no dashboard
 
 Origem: `C:/Users/raque/dev/Agentes de IA/token-usage-schema-supabase.sql` + workflow

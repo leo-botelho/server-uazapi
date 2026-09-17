@@ -5,9 +5,10 @@ import { Badge } from '@/components/ui/badge'
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
-import { AlertTriangle, ArrowDownRight, ArrowUpRight, BotOff, Database, Minus } from 'lucide-react'
+import { AlertTriangle, ArrowDownRight, ArrowUpRight, BotOff, Database, Minus, RefreshCwOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { loadAiCosts, OTHERS_SERIES, PERIODS, type AgentCost, type CostsResult, type PeriodKey } from '@/lib/ai-costs'
+import { FX_MAX_BRL, FX_MIN_BRL, type FxInfo } from '@/lib/ai-costs-fx'
 
 /**
  * Acompanhamento de gastos com IA por agente, no dashboard.
@@ -22,21 +23,58 @@ import { loadAiCosts, OTHERS_SERIES, PERIODS, type AgentCost, type CostsResult, 
 
 const usdFull  = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const usdFour  = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'USD', minimumFractionDigits: 4, maximumFractionDigits: 4 })
+const brlFull  = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const brlFour  = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 4, maximumFractionDigits: 4 })
 const compact  = new Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 1 })
 const integer  = new Intl.NumberFormat('pt-BR')
 const pct0     = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 })
+const rateFmt  = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })
 
 /**
- * Totais com 2 casas. Abaixo de 1 centavo, 4 casas: gasto real nao pode
- * aparecer como US$ 0,00.
+ * Formatacao de valores em duas moedas.
+ *
+ * O custo nasce em dolar (precos dos provedores). Com cotacao valida, o valor
+ * principal e em reais — e o que efetivamente sai do caixa — e o dolar aparece
+ * como referencia. Sem cotacao utilizavel, tudo fica so em dolar.
+ *
+ * Totais com 2 casas; abaixo de 1 centavo, 4 casas, para gasto real nao
+ * aparecer como zero. Custo unitario sempre com 4 casas, alinhando a coluna.
  */
-function usd(value: number): string {
-  return value > 0 && value < 0.01 ? usdFour.format(value) : usdFull.format(value)
+interface Money {
+  hasBrl: boolean
+  main: (usd: number) => string
+  sub: (usd: number) => string | null
+  unit: (usd: number) => string
+  unitSub: (usd: number) => string | null
+  /** As duas moedas numa linha, para tooltip e leitor de tela. */
+  both: (usd: number) => string
 }
 
-/** Custo unitario (por execucao) e sempre fracao de centavo: 4 casas fixas alinham a coluna. */
-function usdUnit(value: number): string {
-  return usdFour.format(value)
+function small(full: Intl.NumberFormat, four: Intl.NumberFormat, value: number): string {
+  return value > 0 && value < 0.01 ? four.format(value) : full.format(value)
+}
+
+function makeMoney(rate: number | null): Money {
+  const usd = (v: number) => small(usdFull, usdFour, v)
+  if (rate === null) {
+    return {
+      hasBrl: false,
+      main: usd,
+      sub: () => null,
+      unit: (v) => usdFour.format(v),
+      unitSub: () => null,
+      both: usd,
+    }
+  }
+  const brl = (v: number) => small(brlFull, brlFour, v * rate)
+  return {
+    hasBrl: true,
+    main: brl,
+    sub: usd,
+    unit: (v) => brlFour.format(v * rate),
+    unitSub: (v) => usdFour.format(v),
+    both: (v) => `${brl(v)} (${usd(v)})`,
+  }
 }
 
 function shortDay(key: string): string {
@@ -78,11 +116,19 @@ function Delta({ value, label }: { value: number | null; label?: string }) {
   )
 }
 
-function Kpi({ title, value, detail }: { title: string; value: string; detail: React.ReactNode }) {
+function Kpi({
+  title, value, sub, detail,
+}: {
+  title: string
+  value: string
+  sub?: string | null
+  detail: React.ReactNode
+}) {
   return (
     <div className="rounded-lg border bg-card p-4">
       <p className="text-sm text-muted-foreground">{title}</p>
       <p className="mt-1 text-2xl font-bold tracking-tight tabular-nums">{value}</p>
+      {sub && <p className="text-sm tabular-nums text-muted-foreground">{sub}</p>}
       <div className="mt-1 text-xs">{detail}</div>
     </div>
   )
@@ -112,10 +158,11 @@ function PeriodFilter({ active }: { active: PeriodKey }) {
 }
 
 function DailyChart({
-  daily, series,
+  daily, series, money,
 }: {
   daily: { day: string; total: number; segments: { series: string; cost: number }[] }[]
   series: string[]
+  money: Money
 }) {
   const max = Math.max(...daily.map((d) => d.total), 0)
   const total = daily.reduce((s, d) => s + d.total, 0)
@@ -142,14 +189,14 @@ function DailyChart({
     <div className="space-y-3">
       <div
         role="img"
-        aria-label={`Gasto diário por agente: ${usd(total)} em ${daily.length} dias, pico de ${usd(max)} em um dia.`}
+        aria-label={`Gasto diário por agente: ${money.both(total)} em ${daily.length} dias, pico de ${money.both(max)} em um dia.`}
         className="relative"
       >
         {/* Guias de escala */}
         <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-44">
           <div className="absolute inset-x-0 top-0 border-t border-dashed border-border" />
           <div className="absolute inset-x-0 top-1/2 border-t border-dashed border-border/60" />
-          <span className="absolute right-0 -top-5 text-[11px] tabular-nums text-muted-foreground">{usd(max)}</span>
+          <span className="absolute right-0 -top-5 text-[11px] tabular-nums text-muted-foreground">{money.main(max)}</span>
         </div>
 
         <div className="flex h-44 items-end gap-[2px] border-b border-border">
@@ -159,8 +206,8 @@ function DailyChart({
               className="group flex h-full min-w-0 flex-1 flex-col-reverse"
               title={
                 bar.total > 0
-                  ? `${shortDay(bar.day)} — ${usd(bar.total)}\n` +
-                    bar.segments.map((s) => `${s.series}: ${usd(s.cost)}`).join('\n')
+                  ? `${shortDay(bar.day)} — ${money.both(bar.total)}\n` +
+                    bar.segments.map((s) => `${s.series}: ${money.both(s.cost)}`).join('\n')
                   : `${shortDay(bar.day)} — sem gasto`
               }
             >
@@ -202,7 +249,7 @@ function DailyChart({
   )
 }
 
-function AgentsTable({ agents, prevCom }: { agents: AgentCost[]; prevCom: string }) {
+function AgentsTable({ agents, prevCom, money }: { agents: AgentCost[]; prevCom: string; money: Money }) {
   return (
     <Table>
       <TableHeader>
@@ -235,7 +282,10 @@ function AgentsTable({ agents, prevCom }: { agents: AgentCost[]; prevCom: string
                 última execução {dateTime(a.lastRun)}
               </div>
             </TableCell>
-            <TableCell className="text-right tabular-nums font-medium">{usd(a.cost)}</TableCell>
+            <TableCell className="text-right tabular-nums">
+              <div className="font-medium">{money.main(a.cost)}</div>
+              {money.hasBrl && <div className="text-xs text-muted-foreground">{money.sub(a.cost)}</div>}
+            </TableCell>
             <TableCell>
               <div className="flex items-center gap-2">
                 <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted" aria-hidden>
@@ -245,14 +295,19 @@ function AgentsTable({ agents, prevCom }: { agents: AgentCost[]; prevCom: string
               </div>
             </TableCell>
             <TableCell className="text-right text-xs tabular-nums">
-              <span title={`Em ${prevCom}: ${usd(a.prevCost)}`}>
+              <span title={`Em ${prevCom}: ${money.both(a.prevCost)}`}>
                 <Delta value={a.deltaPct} />
               </span>
             </TableCell>
             <TableCell className="text-right tabular-nums">{integer.format(a.executions)}</TableCell>
             <TableCell className="text-right tabular-nums">{integer.format(a.conversations)}</TableCell>
             <TableCell className="text-right tabular-nums">
-              {a.costPerExecution === null ? '—' : usdUnit(a.costPerExecution)}
+              {a.costPerExecution === null ? '—' : (
+                <>
+                  <div>{money.unit(a.costPerExecution)}</div>
+                  {money.hasBrl && <div className="text-xs text-muted-foreground">{money.unitSub(a.costPerExecution)}</div>}
+                </>
+              )}
             </TableCell>
             <TableCell className="text-right tabular-nums">{compact.format(a.tokens)}</TableCell>
             <TableCell>
@@ -262,7 +317,7 @@ function AgentsTable({ agents, prevCom }: { agents: AgentCost[]; prevCom: string
                     key={m}
                     variant="outline"
                     className={cn('font-mono text-[11px]', a.missingPriceModels.includes(m) && 'border-amber-500/50 text-amber-400')}
-                    title={a.missingPriceModels.includes(m) ? 'Sem preço cadastrado: contado como US$ 0' : undefined}
+                    title={a.missingPriceModels.includes(m) ? 'Sem preço cadastrado: contado como zero' : undefined}
                   >
                     {m}
                   </Badge>
@@ -273,6 +328,73 @@ function AgentsTable({ agents, prevCom }: { agents: AgentCost[]; prevCom: string
         ))}
       </TableBody>
     </Table>
+  )
+}
+
+function ageText(hours: number | null): string {
+  if (hours === null) return 'sem data de atualização'
+  if (hours < 48) return `há ${Math.max(1, Math.round(hours))} h`
+  return `há ${Math.floor(hours / 24)} dias`
+}
+
+/** Aviso quando a cotacao nao e confiavel. Cotacao boa ou ausente: nada. */
+function FxAlert({ fx }: { fx: FxInfo }) {
+  if (fx.status === 'stale') {
+    return (
+      <Alert className="border-amber-500/40">
+        <RefreshCwOff className="text-amber-400" aria-hidden />
+        <AlertTitle>Cotação do dólar desatualizada</AlertTitle>
+        <AlertDescription>
+          Última atualização {ageText(fx.ageHours)} ({dateTime(fx.updatedAt)}). Os valores em reais
+          usam essa cotação — confira se o fluxo de cotação no n8n está rodando.
+        </AlertDescription>
+      </Alert>
+    )
+  }
+
+  if (fx.status === 'invalid') {
+    const gravado = fx.rawRate === null ? 'um valor não numérico' : rateFmt.format(fx.rawRate)
+    return (
+      <Alert className="border-amber-500/40">
+        <AlertTriangle className="text-amber-400" aria-hidden />
+        <AlertTitle>Cotação fora do esperado — valores exibidos só em dólar</AlertTitle>
+        <AlertDescription>
+          {fx.looksInverted ? (
+            <>
+              A tabela <code className="font-mono text-xs">exchange_rate</code> tem {gravado}, que parece
+              ser a cotação invertida (quanto vale 1 real em dólar). O painel espera quantos reais vale
+              1 dólar, por exemplo 5,31.
+            </>
+          ) : (
+            <>
+              A tabela <code className="font-mono text-xs">exchange_rate</code> tem {gravado}, fora da
+              faixa esperada de {FX_MIN_BRL} a {FX_MAX_BRL} reais por dólar. Confira o fluxo de cotação
+              no n8n.
+            </>
+          )}
+        </AlertDescription>
+      </Alert>
+    )
+  }
+
+  return null
+}
+
+/** Rodape explicando a conversao. */
+function FxFootnote({ fx }: { fx: FxInfo }) {
+  if (fx.status === 'missing') {
+    return (
+      <p>
+        Sem cotação em <code className="font-mono">exchange_rate</code>: valores só em dólar.
+      </p>
+    )
+  }
+  if (fx.rate === null) return null
+  return (
+    <p>
+      Convertido para reais pela cotação de US$ 1 = R$ {rateFmt.format(fx.rate)}, atualizada em{' '}
+      {dateTime(fx.updatedAt)}. Períodos anteriores usam a mesma cotação, não a do dia do gasto.
+    </p>
   )
 }
 
@@ -287,13 +409,14 @@ export async function AiCostsSection({ period }: { period: PeriodKey }) {
 
 /** Renderizacao pura a partir do resultado — sem acesso a banco. */
 export function AiCostsView({ period, result }: { period: PeriodKey; result: CostsResult }) {
+  const money = makeMoney(result.state === 'ok' ? result.fx.rate : null)
 
   const header = (
     <div className="flex flex-wrap items-end justify-between gap-3">
       <div>
         <h2 className="text-xl font-semibold">Gastos com IA por agente</h2>
         <p className="text-sm text-muted-foreground">
-          Estimativa em US$ a partir dos tokens consumidos pelos agentes no n8n
+          Estimativa {money.hasBrl ? 'em reais e dólares' : 'em dólares'} a partir dos tokens consumidos pelos agentes no n8n
         </p>
       </div>
       <PeriodFilter active={period} />
@@ -378,13 +501,15 @@ export function AiCostsView({ period, result }: { period: PeriodKey; result: Cos
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Kpi
           title="Gasto no período"
-          value={usd(result.total)}
+          value={money.main(result.total)}
+          sub={money.sub(result.total)}
           detail={<Delta value={result.deltaPct} label={p.prev.short} />}
         />
         {p.key === 'mes' ? (
           <Kpi
             title="Projeção para o mês"
-            value={result.projection === null ? '—' : usd(result.projection)}
+            value={result.projection === null ? '—' : money.main(result.projection)}
+            sub={result.projection === null ? null : money.sub(result.projection)}
             detail={
               <span className="text-muted-foreground">
                 {result.projection === null ? 'disponível a partir do 3º dia' : 'mantido o ritmo atual'}
@@ -394,13 +519,15 @@ export function AiCostsView({ period, result }: { period: PeriodKey; result: Cos
         ) : (
           <Kpi
             title="Média por dia"
-            value={usd(averagePerDay)}
+            value={money.main(averagePerDay)}
+            sub={money.sub(averagePerDay)}
             detail={<span className="text-muted-foreground">{p.days.length} dias</span>}
           />
         )}
         <Kpi
           title="Custo por execução"
-          value={costPerExecution === null ? '—' : usdUnit(costPerExecution)}
+          value={costPerExecution === null ? '—' : money.unit(costPerExecution)}
+          sub={costPerExecution === null ? null : money.unitSub(costPerExecution)}
           detail={
             <span className="text-muted-foreground">
               {integer.format(result.executions)} execuções · {activeAgents.length} agente{activeAgents.length === 1 ? '' : 's'}
@@ -414,6 +541,8 @@ export function AiCostsView({ period, result }: { period: PeriodKey; result: Cos
         />
       </div>
 
+      <FxAlert fx={result.fx} />
+
       {result.missingPrice.models.length > 0 && (
         <Alert className="border-amber-500/40">
           <AlertTriangle className="text-amber-400" aria-hidden />
@@ -426,7 +555,7 @@ export function AiCostsView({ period, result }: { period: PeriodKey; result: Cos
                 <code className="font-mono text-xs text-foreground">{m}</code>
               </span>
             ))}{' '}
-            entraram como US$ 0. Cadastre o preço em <code className="font-mono text-xs">model_pricing</code>.
+            entraram como custo zero. Cadastre o preço em <code className="font-mono text-xs">model_pricing</code>.
           </AlertDescription>
         </Alert>
       )}
@@ -452,7 +581,7 @@ export function AiCostsView({ period, result }: { period: PeriodKey; result: Cos
           <CardDescription>Por agente, no horário de Brasília</CardDescription>
         </CardHeader>
         <CardContent className="pt-4">
-          <DailyChart daily={result.daily} series={result.series} />
+          <DailyChart daily={result.daily} series={result.series} money={money} />
         </CardContent>
       </Card>
 
@@ -462,14 +591,17 @@ export function AiCostsView({ period, result }: { period: PeriodKey; result: Cos
           <CardDescription>Variação comparada com {p.prev.com}</CardDescription>
         </CardHeader>
         <CardContent>
-          <AgentsTable agents={agents} prevCom={p.prev.com} />
+          <AgentsTable agents={agents} prevCom={p.prev.com} money={money} />
         </CardContent>
       </Card>
 
-      <p className="text-xs text-muted-foreground">
-        Custo estimado com os preços de <code className="font-mono">model_pricing</code>, não é a fatura
-        dos provedores. Última execução coletada: {dateTime(result.lastCollection)}.
-      </p>
+      <div className="space-y-1 text-xs text-muted-foreground">
+        <p>
+          Custo estimado com os preços de <code className="font-mono">model_pricing</code>, não é a fatura
+          dos provedores. Última execução coletada: {dateTime(result.lastCollection)}.
+        </p>
+        <FxFootnote fx={result.fx} />
+      </div>
     </section>
   )
 }

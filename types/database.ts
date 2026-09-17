@@ -392,6 +392,24 @@ export type Database = {
         }
         Relationships: []
       }
+      exchange_rate: {
+        Row: {
+          id: number
+          usd_to_brl: number
+          updated_at: string
+        }
+        Insert: {
+          id?: number
+          usd_to_brl: number
+          updated_at?: string
+        }
+        Update: {
+          id?: number
+          usd_to_brl?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       token_usage_sync_state: {
         Row: {
           workflow_id: string
