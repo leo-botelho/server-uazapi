@@ -34,6 +34,9 @@ import { withMissingColumnFallback } from '@/lib/db-resilient'
 /** Sem notícia do webhook por mais que isso, algo está errado com a entrega. */
 const WEBHOOK_SILENCE_ALERT_MINUTES = 60
 
+/** Intervalo do cron (workers/monitor-cron). Usado para "a primeira rodada da hora". */
+const TICK_MINUTES = 2
+
 /**
  * Remove TODO espaco em branco de um secret, nao so das pontas.
  *
@@ -79,6 +82,15 @@ async function runTick(request: NextRequest): Promise<NextResponse> {
   }
 
   const startedAt = Date.now()
+  // Tempo por etapa: sem isto, "o tick demorou 6 s" nao diz qual parte demorou.
+  const marcos: Record<string, number> = {}
+  let ultimoMarco = startedAt
+  const marcar = (etapa: string) => {
+    const agora = Date.now()
+    marcos[etapa] = agora - ultimoMarco
+    ultimoMarco = agora
+  }
+
   const supabase  = await createServiceClient()
 
   // ── 1. Resolve os servidores uazapiGO a consultar ─────────────────────────
@@ -118,6 +130,8 @@ async function runTick(request: NextRequest): Promise<NextResponse> {
     }
   }
 
+  marcar('reconcilia')
+
   // ── 3. Reenvia alertas adiados pela janela de silêncio ────────────────────
   let flushed = 0
   try {
@@ -127,6 +141,8 @@ async function runTick(request: NextRequest): Promise<NextResponse> {
     console.error('[monitor]', msg)
     errors.push(msg)
   }
+
+  marcar('alertasPendentes')
 
   // ── 4. Watchdog do webhook ────────────────────────────────────────────────
   // `deliveryAgo` = qualquer entrega (batimento); `connectionAgo` = so eventos
@@ -145,8 +161,10 @@ async function runTick(request: NextRequest): Promise<NextResponse> {
   // muda porque o evento nao se liga a nenhum registro.
   const orphanEvents = await orphanEventCount(supabase)
   if (orphanEvents > 0) {
+    // Amostra: no teto, o numero real pode ser maior.
+    const quantos = orphanEvents >= ORPHAN_SAMPLE ? `${ORPHAN_SAMPLE}+` : String(orphanEvents)
     console.warn(
-      `[monitor] ${orphanEvents} evento(s) de webhook na ultima hora sem instancia ` +
+      `[monitor] ${quantos} evento(s) de webhook na ultima hora sem instancia ` +
       'correspondente — token divergente ou instancia ainda nao importada.'
     )
   }
@@ -177,11 +195,24 @@ async function runTick(request: NextRequest): Promise<NextResponse> {
     )
   }
 
+  marcar('watchdog')
+
   // ── 5. Auto-correcao do webhook global ────────────────────────────────────
-  const webhookFix = await ensureGlobalWebhook(targets, webhookSilentFor)
+  // Duas chamadas ao uazapiGO a cada 2 min so para reconferir uma configuracao
+  // que quase nunca muda. Roda quando o webhook esta mudo (ai urge) ou uma vez
+  // por hora.
+  const inicioDaHora = new Date().getUTCMinutes() < TICK_MINUTES
+  const webhookFix = !webhookHealthy || inicioDaHora
+    ? await ensureGlobalWebhook(targets, webhookSilentFor)
+    : { checked: false, action: 'skipped_this_tick' }
 
   // ── 6. Retenção: as tabelas de log cresciam para sempre ───────────────────
-  const purged = await purgeOldRecords(supabase)
+  // Uma vez por hora: a limpeza nao tem pressa e cada rodada custa duas queries.
+  const purged = inicioDaHora
+    ? await purgeOldRecords(supabase)
+    : { webhookEvents: 0, reconnectTokens: 0 }
+
+  marcar('webhookEManutencao')
 
   const summary = {
     ok: errors.length === 0,
@@ -208,6 +239,7 @@ async function runTick(request: NextRequest): Promise<NextResponse> {
       ...(deliveryErrors?.length ? { deliveryErrors } : {}),
     },
     durationMs: Date.now() - startedAt,
+    etapasMs: marcos,
     ...(errors.length ? { errors } : {}),
   }
 
@@ -291,7 +323,7 @@ async function reconcileServer(
   // o botao "Sincronizar" — que repara o token — fazia o painel voltar a ver.
   const { data: rows, error } = await supabase
     .from('instances')
-    .select('id, name, uazapi_token, status, alert_channel, alert_config, silence_start, silence_end, client_id')
+    .select('id, name, uazapi_token, status, profile_name, profile_picture, alert_channel, alert_config, silence_start, silence_end, client_id')
     .eq('active', true)
 
   if (error) throw new Error(`consulta ao banco falhou: ${error.message}`)
@@ -316,6 +348,7 @@ async function reconcileServer(
   let renamed  = 0
   const orphans: string[] = []
   const driftErrors: string[] = []
+  const apenasVistas: string[] = []
   const now = new Date().toISOString()
 
   for (const inst of remote) {
@@ -383,10 +416,18 @@ async function reconcileServer(
       console.log(`[monitor] "${row.name}" renomeada no uazapiGO para "${remoteName}"`)
       renamed++
     }
-    if (remoteProfile !== null) drift.profile_name    = remoteProfile
-    if (remotePicture !== null) drift.profile_picture = remotePicture
+    // So entra no UPDATE o que realmente mudou: assim a maioria das instancias
+    // fica com `last_seen_at` sozinho e cabe numa unica gravacao em lote.
+    if (remoteProfile !== null && remoteProfile !== row.profile_name)    drift.profile_name    = remoteProfile
+    if (remotePicture !== null && remotePicture !== row.profile_picture) drift.profile_picture = remotePicture
 
     if (newStatus === previousStatus) {
+      // Nada mudou alem do "visto agora": junta para uma gravacao so no fim.
+      if (Object.keys(drift).length === 1) {
+        apenasVistas.push(row.id)
+        continue
+      }
+
       const { error: driftError } = await withMissingColumnFallback(
         drift,
         (p) => supabase.from('instances').update(p).eq('id', row.id),
@@ -455,6 +496,20 @@ async function reconcileServer(
       } catch (err) {
         console.error(`[monitor] alerta de "${row.name}" falhou:`, err instanceof Error ? err.message : String(err))
       }
+    }
+  }
+
+  // Uma gravacao para todas as instancias sem novidade, em vez de uma por
+  // instancia a cada 2 minutos.
+  if (apenasVistas.length > 0) {
+    const { error } = await withMissingColumnFallback(
+      { last_seen_at: now },
+      (p) => supabase.from('instances').update(p).in('id', apenasVistas),
+      'last_seen_at em lote'
+    )
+    if (error) {
+      console.error('[monitor] falha ao marcar instancias como vistas:', error.message)
+      driftErrors.push(`last_seen_at em lote: ${error.message}`)
     }
   }
 
@@ -570,39 +625,40 @@ async function ensureGlobalWebhook(
 /** Dias de histórico mantidos em `webhook_events`. */
 const WEBHOOK_EVENT_RETENTION_DAYS = 30
 
+/** Teto da amostra de eventos orfaos: o numero exato nao muda a conclusao. */
+const ORPHAN_SAMPLE = 25
+
+/** Teto de linhas apagadas por rodada, para a limpeza nunca virar uma varredura cara. */
+const PURGE_BATCH = 2000
+
 /**
- * Remove registros antigos. Sem isso `webhook_events` e `reconnect_tokens`
- * crescem indefinidamente — cada evento guarda o payload completo.
+ * Remove registros antigos, em lotes.
+ *
+ * Antes isto rodava a cada tick com `delete ... .select('id')`: o banco
+ * devolvia a lista inteira de ids apagados e o Worker gastava CPU montando e
+ * jogando fora esse JSON — foi o que fez o Cloudflare acusar estouro de CPU a
+ * cada 2 minutos. Agora as funcoes `purge_*` (migration 013) apagam no maximo
+ * PURGE_BATCH linhas e devolvem so a quantidade.
  */
 async function purgeOldRecords(
   supabase: Awaited<ReturnType<typeof createServiceClient>>
 ): Promise<{ webhookEvents: number; reconnectTokens: number }> {
-  const cutoff = new Date(Date.now() - WEBHOOK_EVENT_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString()
-
-  let webhookEvents = 0
-  let reconnectTokens = 0
-
-  const { data: events, error: eventsError } = await supabase
-    .from('webhook_events')
-    .delete()
-    .lt('received_at', cutoff)
-    .select('id')
-
-  if (eventsError) console.error('[monitor] purge webhook_events falhou:', eventsError.message)
-  else webhookEvents = events?.length ?? 0
-
-  // Tokens expirados há mais de 7 dias não servem nem para auditoria.
+  const cutoff      = new Date(Date.now() - WEBHOOK_EVENT_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString()
+  // Tokens expirados ha mais de 7 dias nao servem nem para auditoria.
   const tokenCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-  const { data: tokens, error: tokensError } = await supabase
-    .from('reconnect_tokens')
-    .delete()
-    .lt('expires_at', tokenCutoff)
-    .select('id')
 
-  if (tokensError) console.error('[monitor] purge reconnect_tokens falhou:', tokensError.message)
-  else reconnectTokens = tokens?.length ?? 0
+  const [eventos, tokens] = await Promise.all([
+    supabase.rpc('purge_webhook_events',   { p_cutoff: cutoff,      p_limit: PURGE_BATCH }),
+    supabase.rpc('purge_reconnect_tokens', { p_cutoff: tokenCutoff, p_limit: PURGE_BATCH }),
+  ])
 
-  return { webhookEvents, reconnectTokens }
+  if (eventos.error) console.error('[monitor] purge webhook_events falhou:', eventos.error.message)
+  if (tokens.error)  console.error('[monitor] purge reconnect_tokens falhou:', tokens.error.message)
+
+  return {
+    webhookEvents:   Number(eventos.data ?? 0),
+    reconnectTokens: Number(tokens.data  ?? 0),
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -613,18 +669,21 @@ async function purgeOldRecords(
 async function orphanEventCount(
   supabase: Awaited<ReturnType<typeof createServiceClient>>
 ): Promise<number> {
+  // Amostra limitada: `count: 'exact'` varria a tabela inteira a cada 2 min so
+  // para alimentar um aviso. Saber que existem (e a ordem de grandeza) basta.
   const since = new Date(Date.now() - 60 * 60_000).toISOString()
-  const { count, error } = await supabase
+  const { data, error } = await supabase
     .from('webhook_events')
-    .select('id', { count: 'exact', head: true })
+    .select('id')
     .is('instance_id', null)
     .gte('received_at', since)
+    .limit(ORPHAN_SAMPLE)
 
   if (error) {
     console.warn('[monitor] contagem de eventos orfaos falhou:', error.message)
     return 0
   }
-  return count ?? 0
+  return data?.length ?? 0
 }
 
 /**

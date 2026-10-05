@@ -436,6 +436,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      // Limpeza em lotes (migration 013): devolve quantas linhas foram apagadas.
+      purge_webhook_events: {
+        Args: { p_cutoff: string; p_limit?: number }
+        Returns: number
+      }
+      purge_reconnect_tokens: {
+        Args: { p_cutoff: string; p_limit?: number }
+        Returns: number
+      }
       token_cost_por_agente: {
         Args: { p_desde: string; p_ate: string }
         Returns: {

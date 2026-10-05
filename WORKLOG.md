@@ -5,9 +5,55 @@ Registrar aqui toda implementação, fix e decisão técnica relevante ao final 
 
 ---
 
+## 2026-10-05 — Cloudflare acusando estouro de CPU a cada 2 minutos
+
+Sintoma: e-mails constantes do Cloudflare ("Worker exceeded CPU time limit", 100+ vezes em 24 h),
+sempre em `POST /api/monitor/tick` — o endpoint que o cron chama a cada 2 min. Nos logs, 2 linhas de
+erro de CPU por execucao do tick.
+
+### O que estava caro no tick (todo tick, a cada 2 min)
+1. **Limpeza devolvendo os ids apagados.** `purgeOldRecords` fazia
+   `delete ... .select('id')` em `webhook_events` e `reconnect_tokens`: o banco devolvia a lista
+   inteira de ids e o Worker gastava CPU montando e descartando esse JSON. Com a tabela crescendo,
+   o custo cresce junto — bate com os alertas terem comecado semanas depois do cron entrar no ar.
+   Pior: com backlog grande o DELETE podia estourar o statement_timeout do Supabase, nunca terminar
+   e ser repetido a cada 2 minutos para sempre.
+2. **`count: 'exact'` em `webhook_events`** a cada tick, so para alimentar um aviso, varrendo a
+   tabela inteira (sem indice por `received_at`).
+3. **Um UPDATE por instancia** so para carimbar `last_seen_at`, mesmo sem nada ter mudado.
+   O campo de perfil entrava no UPDATE mesmo quando igual ao que ja estava gravado.
+4. **Duas chamadas ao uazapiGO a cada tick** (`ensureGlobalWebhook`) para reconferir uma config que
+   quase nunca muda.
+
+### Correcoes
+- **Migration 013**: funcoes `purge_webhook_events` / `purge_reconnect_tokens` apagam em lotes
+  (teto de 2000) e devolvem **so a quantidade**; indices novos em `webhook_events (received_at)` e
+  parcial para eventos sem instancia dona.
+- Limpeza e auto-correcao do webhook passam a rodar **uma vez por hora** (primeira rodada da hora),
+  nao a cada 2 min. Quando o webhook esta mudo, a auto-correcao roda assim mesmo.
+- Contagem de orfaos virou **amostra de ate 25 linhas** (o aviso mostra "25+" no teto).
+- Instancias sem novidade sao carimbadas em **uma unica gravacao em lote**; perfil e nome so entram
+  no UPDATE quando realmente mudaram (a consulta passou a trazer `profile_name`/`profile_picture`
+  para permitir a comparacao).
+- Resumo do tick agora traz `etapasMs` (tempo por etapa): sem isso, "durationMs: 6000" nao diz qual
+  parte custou.
+
+### Pendente
+- Aplicar `013_purge_limitado.sql` no Supabase. Ate la a limpeza horaria falha com PGRST202
+  (funcao inexistente), registrado no log e **sem derrubar o tick** — o gasto alto de CPU ja sai do ar
+  de qualquer forma, porque o `delete ... select` foi removido.
+- **Confirmar o plano do Worker.** No plano gratuito o limite e de 10 ms de CPU por requisicao, e ai
+  quase qualquer renderizacao do Next.js estoura; no plano pago sao 30 s. Se os e-mails continuarem
+  depois desta mudanca, a saida e subir para o Workers Paid ou mover a reconciliacao para dentro do
+  worker de cron (`workers/monitor-cron`), que e JS puro e nao carrega o Next.js.
+- `supabase/functions/notify-disconnect/index.ts` reapareceu sem versionamento na copia para o D:
+  (era codigo morto removido em 27/08). Nao commitado — confirmar se pode apagar.
+
+---
+
 ## 2026-09-17 — Workflow "Coleta de Tokens" corrigido (pendencias de 2026-09-16)
 
-Arquivo: `C:/Users/raque/dev/Agentes de IA/Coleta de Tokens.json` (backup do original em
+Arquivo: `D:/repo-local/Agentes de IA/Coleta de Tokens.json` (backup do original em
 `Agentes de IA/_backup-20260917/`). Historico detalhado no `WORKLOG.md` daquela pasta.
 
 Resolve as 4 pendencias registradas em 2026-09-16 e mais uma encontrada ao ler o workflow:
@@ -76,7 +122,7 @@ RLS sem policy e grants revogados. Sem isso a chave anon podia GRAVAR uma cotaca
 
 ## 2026-09-16 — Gastos com IA por agente no dashboard
 
-Origem: `C:/Users/raque/dev/Agentes de IA/token-usage-schema-supabase.sql` + workflow
+Origem: `D:/repo-local/Agentes de IA/token-usage-schema-supabase.sql` + workflow
 `Coleta de Tokens.json` (o escritor dessas tabelas).
 
 ### Migration 011 (`supabase/migrations/011_token_usage.sql`)
@@ -447,7 +493,7 @@ entrega nenhum evento `connection` → o status só muda quando se clica "Sincro
 ## 2026-08-24 — Clone do repositório no workspace
 
 **O que foi feito**
-- Repositório `https://github.com/leo-botelho/server-uazapi.git` clonado em `C:\Users\raque\dev\server-uazapi` (branch `main`, HEAD `1b988b6`).
+- Repositório `https://github.com/leo-botelho/server-uazapi.git` clonado em `D:\repo-local\server-uazapi` (branch `main`, HEAD `1b988b6`).
 - Criado este `WORKLOG.md` (não existia no repo).
 
 **Estado do ambiente**
