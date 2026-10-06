@@ -5,6 +5,45 @@ Registrar aqui toda implementação, fix e decisão técnica relevante ao final 
 
 ---
 
+## 2026-10-06 — Aviso de "webhook mudo" era falso alarme repetido a cada 2 min
+
+Sintoma: `[monitor] ⚠️ Nenhuma entrega de webhook ha 1114 min` no log do Worker, a cada tick.
+
+### Diagnostico (dados reais de producao)
+O tick passou a reportar de ONDE vem a medicao e quais eventos o webhook assina:
+```
+"webhook": { "fonte": "batimento", "lastDeliveryMinutesAgo": 1128,
+             "autofix": { "action": "ok", "eventos": ["leads", "connection"] } }
+```
+- `fonte: batimento` → migration 010 aplicada, medicao real (qualquer tipo de evento), nao o
+  fallback ambiguo que so enxerga eventos de conexao.
+- O webhook global assina **so `leads` e `connection`**. `connection` so dispara quando uma
+  instancia muda de estado. Com as 6 instancias estaveis, zero entrega e o comportamento correto —
+  o canal nao esta morto (entregou algo 18,8 h antes).
+
+Ou seja: o limite de 1 h estava errado para uma assinatura que so cobre mudanca de estado.
+
+### Correcoes
+- **Sinal preciso novo (`missedChange`)**: se o monitor acabou de detectar mudanca de estado, havia
+  um evento para o webhook entregar; se nada chegou nos ultimos 15 min, a entrega quebrou de fato.
+  Vai como `error` no log. Esse e o detector confiavel — nao da falso positivo por ociosidade.
+- Sinal por silencio puro virou dica de ultimo caso: limite de 1 h → 48 h, e o texto avisa que o
+  silencio pode ser normal.
+- O aviso fraco sai no maximo uma vez por hora (era a cada 2 min, 720x/dia).
+- `webhook.fonte` e `autofix.eventos` passaram a sair no resumo do tick — foi o que permitiu fechar
+  o diagnostico sem acesso ao banco.
+
+### Efeito medido no mesmo tick
+`healthy` voltou a `true`, a auto-correcao deixou de rodar em todo tick (`skipped_this_tick`),
+a etapa `watchdog` caiu de 1012 ms para 66 ms e o tick inteiro de 2787 ms para 1438 ms.
+
+### Observacoes
+- `supabase/functions/notify-disconnect/` (codigo morto que reapareceu na copia para o D:) foi
+  apagado do disco; no Git ja estava removido desde 27/08.
+- Continua pendente aplicar `013_purge_limitado.sql`.
+
+---
+
 ## 2026-10-05 — Cloudflare acusando estouro de CPU a cada 2 minutos
 
 Sintoma: e-mails constantes do Cloudflare ("Worker exceeded CPU time limit", 100+ vezes em 24 h),
