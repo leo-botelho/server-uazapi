@@ -35,11 +35,11 @@ import { withMissingColumnFallback } from '@/lib/db-resilient'
  * Silencio do webhook — sinal FRACO, de proposito com limite largo.
  *
  * O webhook global assina eventos de mudanca de estado (`connection`). Com as
- * instancias estaveis, ficar meio dia sem nenhuma entrega e o comportamento
+ * instancias estaveis, ficar dias sem nenhuma entrega e o comportamento
  * normal, nao defeito: o limite de 1 h fazia o monitor gritar todo dia sem
  * motivo. O sinal confiavel e o de baixo (`missedChange`).
  */
-const WEBHOOK_SILENCE_ALERT_MINUTES = 12 * 60
+const WEBHOOK_SILENCE_ALERT_MINUTES = 48 * 60
 
 /**
  * Margem para o webhook entregar uma mudanca que o monitor acabou de ver.
