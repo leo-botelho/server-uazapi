@@ -31,8 +31,23 @@ import { withMissingColumnFallback } from '@/lib/db-resilient'
  * ver `.github/workflows/monitor.yml`.
  */
 
-/** Sem notícia do webhook por mais que isso, algo está errado com a entrega. */
-const WEBHOOK_SILENCE_ALERT_MINUTES = 60
+/**
+ * Silencio do webhook — sinal FRACO, de proposito com limite largo.
+ *
+ * O webhook global assina eventos de mudanca de estado (`connection`). Com as
+ * instancias estaveis, ficar meio dia sem nenhuma entrega e o comportamento
+ * normal, nao defeito: o limite de 1 h fazia o monitor gritar todo dia sem
+ * motivo. O sinal confiavel e o de baixo (`missedChange`).
+ */
+const WEBHOOK_SILENCE_ALERT_MINUTES = 12 * 60
+
+/**
+ * Margem para o webhook entregar uma mudanca que o monitor acabou de ver.
+ * O monitor roda a cada 2 min; o webhook deveria chegar quase junto com o
+ * evento. Se o monitor viu a mudanca e o webhook nao entregou NADA nesse
+ * tempo, a entrega falhou de verdade.
+ */
+const WEBHOOK_MISS_TOLERANCE_MINUTES = 15
 
 /** Intervalo do cron (workers/monitor-cron). Usado para "a primeira rodada da hora". */
 const TICK_MINUTES = 2
@@ -203,6 +218,23 @@ async function runTick(request: NextRequest): Promise<NextResponse> {
     }
   }
 
+  // Sinal preciso, sem falso positivo: o monitor acabou de ver uma mudanca de
+  // estado, logo o uazapiGO tinha um evento `connection` para entregar. Se nada
+  // chegou nesse meio tempo, a entrega esta quebrada — diferente de "ninguem
+  // mudou de estado", que e silencio legitimo.
+  const missedChange =
+    changed > 0 &&
+    deliveryAgo !== null &&
+    deliveryAgo > WEBHOOK_MISS_TOLERANCE_MINUTES
+
+  if (missedChange) {
+    console.error(
+      `[monitor] ⚠️ O webhook perdeu ${changed} mudanca(s) de estado: o monitor detectou agora, ` +
+      `mas nenhuma entrega chegou ha ${deliveryAgo} min. O painel esta funcionando pelo monitor ` +
+      '(ate 2 min de atraso), nao pelo webhook. Confira /settings e GET /globalwebhook/errors.'
+    )
+  }
+
   // Avisa uma vez por hora, nao a cada 2 min: o alerta repetido 720x por dia
   // vira ruido no log e some no meio dos demais.
   if (!webhookHealthy && inicioDaHora) {
@@ -211,8 +243,10 @@ async function runTick(request: NextRequest): Promise<NextResponse> {
         ' estado, esse silencio pode ser normal.'
       : ''
     console.warn(
-      `[monitor] ⚠️ Nenhuma entrega de webhook ha ${deliveryAgo ?? 'sempre'} min ` +
-      `(ultimo evento de conexao ha ${connectionAgo ?? 'sempre'} min; fonte: ${entrega.fonte}).${ressalva}`
+      `[monitor] Nenhuma entrega de webhook ha ${deliveryAgo ?? 'sempre'} min ` +
+      `(ultimo evento de conexao ha ${connectionAgo ?? 'sempre'} min; fonte: ${entrega.fonte}). ` +
+      'Com as instancias estaveis isso pode ser normal — o webhook global so assina mudanca de ' +
+      `estado.${ressalva}`
     )
   }
 
@@ -254,6 +288,8 @@ async function runTick(request: NextRequest): Promise<NextResponse> {
       healthy: webhookHealthy,
       // De onde saiu o numero — ver FonteDaMedicao.
       fonte: entrega.fonte,
+      // true = entrega quebrada de verdade (havia evento para entregar e nao chegou).
+      missedChange,
       lastDeliveryMinutesAgo: deliveryAgo,
       lastConnectionEventMinutesAgo: connectionAgo,
       autofix: webhookFix,
