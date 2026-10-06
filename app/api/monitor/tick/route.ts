@@ -38,6 +38,16 @@ const WEBHOOK_SILENCE_ALERT_MINUTES = 60
 const TICK_MINUTES = 2
 
 /**
+ * De onde veio o "ha quanto tempo nao chega webhook":
+ * - `batimento`: tabela `webhook_heartbeat`, atualizada a CADA entrega (qualquer evento).
+ *   Silencio aqui significa canal morto mesmo.
+ * - `eventos_de_conexao`: sinal antigo, usado quando a migration 010 nao foi aplicada.
+ *   So enxerga mudanca de estado, entao silencio pode ser so "nada aconteceu".
+ * - `batimento_sem_registro`: a tabela existe mas nunca recebeu nada.
+ */
+type FonteDaMedicao = 'batimento' | 'eventos_de_conexao' | 'batimento_sem_registro'
+
+/**
  * Remove TODO espaco em branco de um secret, nao so das pontas.
  *
  * Um valor hex copiado de um terminal que quebrou a linha chega com um
@@ -144,14 +154,19 @@ async function runTick(request: NextRequest): Promise<NextResponse> {
 
   marcar('alertasPendentes')
 
+  // Primeira rodada da hora: usada para nao repetir avisos e tarefas de
+  // manutencao em todo tick.
+  const inicioDaHora = new Date().getUTCMinutes() < TICK_MINUTES
+
   // ── 4. Watchdog do webhook ────────────────────────────────────────────────
   // `deliveryAgo` = qualquer entrega (batimento); `connectionAgo` = so eventos
   // de conexao. Separar os dois distingue "webhook morto" de "webhook vivo, sem
   // mudanca de estado" — antes os dois eram o mesmo numero e enganavam.
-  const [deliveryAgo, connectionAgo] = await Promise.all([
+  const [entrega, connectionAgo] = await Promise.all([
     lastDeliveryMinutes(supabase),
     webhookSilenceMinutes(supabase),
   ])
+  const deliveryAgo = entrega.minutes
 
   const webhookHealthy = deliveryAgo !== null && deliveryAgo < WEBHOOK_SILENCE_ALERT_MINUTES
   const webhookSilentFor = deliveryAgo
@@ -188,10 +203,16 @@ async function runTick(request: NextRequest): Promise<NextResponse> {
     }
   }
 
-  if (!webhookHealthy) {
+  // Avisa uma vez por hora, nao a cada 2 min: o alerta repetido 720x por dia
+  // vira ruido no log e some no meio dos demais.
+  if (!webhookHealthy && inicioDaHora) {
+    const ressalva = entrega.fonte === 'eventos_de_conexao'
+      ? ' Medido pelos eventos de CONEXAO (migration 010 pendente): sem nenhuma instancia mudando de' +
+        ' estado, esse silencio pode ser normal.'
+      : ''
     console.warn(
       `[monitor] ⚠️ Nenhuma entrega de webhook ha ${deliveryAgo ?? 'sempre'} min ` +
-      `(ultimo evento de conexao ha ${connectionAgo ?? 'sempre'} min).`
+      `(ultimo evento de conexao ha ${connectionAgo ?? 'sempre'} min; fonte: ${entrega.fonte}).${ressalva}`
     )
   }
 
@@ -201,7 +222,6 @@ async function runTick(request: NextRequest): Promise<NextResponse> {
   // Duas chamadas ao uazapiGO a cada 2 min so para reconferir uma configuracao
   // que quase nunca muda. Roda quando o webhook esta mudo (ai urge) ou uma vez
   // por hora.
-  const inicioDaHora = new Date().getUTCMinutes() < TICK_MINUTES
   const webhookFix = !webhookHealthy || inicioDaHora
     ? await ensureGlobalWebhook(targets, webhookSilentFor)
     : { checked: false, action: 'skipped_this_tick' }
@@ -232,6 +252,8 @@ async function runTick(request: NextRequest): Promise<NextResponse> {
     purged,
     webhook: {
       healthy: webhookHealthy,
+      // De onde saiu o numero — ver FonteDaMedicao.
+      fonte: entrega.fonte,
       lastDeliveryMinutesAgo: deliveryAgo,
       lastConnectionEventMinutesAgo: connectionAgo,
       autofix: webhookFix,
@@ -539,7 +561,7 @@ async function reconcileServer(
 async function ensureGlobalWebhook(
   targets: ServerTarget[],
   webhookSilentFor: number | null
-): Promise<{ checked: boolean; action: string; detail?: string }> {
+): Promise<{ checked: boolean; action: string; detail?: string; eventos?: string[] }> {
   if (process.env.MONITOR_AUTOFIX_WEBHOOK === 'false') {
     return { checked: false, action: 'disabled_by_config' }
   }
@@ -561,9 +583,11 @@ async function ensureGlobalWebhook(
     const isEnabled   = current?.enabled === true
     const hasConnection = (current?.events ?? []).includes('connection')
 
-    // Ja esta correto: nao mexe.
+    // Ja esta correto: nao mexe. Devolve os eventos assinados porque isso muda
+    // a leitura do watchdog: assinando so `connection`, ficar horas sem entrega
+    // e normal enquanto nenhuma instancia muda de estado.
     if (current && pointsHere && isEnabled && hasConnection) {
-      return { checked: true, action: 'ok' }
+      return { checked: true, action: 'ok', eventos: current.events ?? [] }
     }
 
     // Aponta para outro destino E esta funcionando: nao sequestra a configuracao
@@ -692,7 +716,7 @@ async function orphanEventCount(
  */
 async function lastDeliveryMinutes(
   supabase: Awaited<ReturnType<typeof createServiceClient>>
-): Promise<number | null> {
+): Promise<{ minutes: number | null; fonte: FonteDaMedicao }> {
   const { data, error } = await supabase
     .from('webhook_heartbeat')
     .select('last_event_at')
@@ -700,13 +724,19 @@ async function lastDeliveryMinutes(
     .maybeSingle()
 
   // Migration 010 ainda nao aplicada: cai para o sinal antigo em vez de quebrar.
+  // Importante saber qual foi usado: o sinal antigo so enxerga eventos de
+  // CONEXAO, entao "nenhuma entrega" pode significar apenas que nenhuma
+  // instancia mudou de estado — nao que o webhook esteja morto.
   if (error) {
-    console.warn('[monitor] webhook_heartbeat indisponivel:', error.message)
-    return webhookSilenceMinutes(supabase)
+    console.warn('[monitor] webhook_heartbeat indisponivel (migration 010 pendente?):', error.message)
+    return { minutes: await webhookSilenceMinutes(supabase), fonte: 'eventos_de_conexao' }
   }
 
-  if (!data?.last_event_at) return null
-  return Math.floor((Date.now() - new Date(data.last_event_at).getTime()) / 60_000)
+  if (!data?.last_event_at) return { minutes: null, fonte: 'batimento_sem_registro' }
+  return {
+    minutes: Math.floor((Date.now() - new Date(data.last_event_at).getTime()) / 60_000),
+    fonte: 'batimento',
+  }
 }
 
 /** Minutos desde o último evento de CONEXÃO recebido, ou null se nunca houve. */
