@@ -1,7 +1,8 @@
 'use client'
 
 import { useMemo } from 'react'
-import { Lock, Search, ShieldCheck, UsersRound } from 'lucide-react'
+import Link from 'next/link'
+import { Lock, Search, Settings2, ShieldCheck, UsersRound } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -36,6 +37,7 @@ export function filtrarGrupos(
 }
 
 export function GroupList({
+  instanceId,
   grupos,
   selecionados,
   busca,
@@ -47,6 +49,7 @@ export function GroupList({
   aoLimpar,
   disabled,
 }: {
+  instanceId: string
   grupos: GrupoEmCache[]
   selecionados: Set<string>
   busca: string
@@ -145,9 +148,9 @@ export function GroupList({
           const bloqueado = disabled || semPermissao || (!marcado && noLimite)
 
           return (
-            <li key={g.group_jid}>
+            <li key={g.group_jid} className="flex items-center">
               <label
-                className={`flex items-center gap-3 px-3 py-2 text-sm ${
+                className={`flex min-w-0 flex-1 items-center gap-3 px-3 py-2 text-sm ${
                   bloqueado ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:bg-muted/40'
                 }`}
               >
@@ -183,6 +186,16 @@ export function GroupList({
                   ) : null}
                 </span>
               </label>
+
+              {/* Fora do label: clicar aqui abre o grupo, não marca a seleção. */}
+              <Link
+                href={`/groups/${instanceId}/${g.group_jid.replace('@g.us', '')}`}
+                className="mr-2 shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                aria-label={`Gerenciar ${g.name ?? g.group_jid}`}
+                title="Gerenciar este grupo"
+              >
+                <Settings2 className="size-4" aria-hidden />
+              </Link>
             </li>
           )
         })}

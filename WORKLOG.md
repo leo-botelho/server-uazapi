@@ -5,6 +5,91 @@ Registrar aqui toda implementação, fix e decisão técnica relevante ao final 
 
 ---
 
+## 2026-10-24 — Modulo de grupos, fase 2: gestao de um grupo
+
+Primeiro envio real (fase 1) confirmado pelo usuario: funcionou num grupo de teste.
+Usuario esclareceu o uso: ate 10 grupos, numa unica instancia, Cloudflare **Free**.
+
+### Plano Free: o que muda
+
+Free = 10 ms de CPU e 50 chamadas externas por requisicao. Dormir (espera de I/O) continua
+gratis, e o envio pelo navegador cai bem nisso: cada grupo e uma requisicao propria, com
+orcamento proprio. Tirei a recontagem por grupo de `dispatch/one` (3 idas ao banco por
+envio); o `finish` recalcula uma vez. Para a fase 3 (agendador no cron) isso pesa: cada envio
+custa CPU, entao a passada devera processar poucos itens, nao 12. Registrado para la.
+Correcao: o plano original assumia Workers Paid (30 s de CPU). Nao era verdade.
+
+### Filtro "so os grupos em que sou admin"
+
+Checkbox na lista, com contagem. Combina com a busca; "Selecionar N" respeita o filtro.
+
+### Tela de um grupo (`/groups/[instanceId]/[grupo]`)
+
+Na URL o grupo vai SEM `@g.us` (so digitos e hifen): o `@` precisa de codificacao e e facil
+errar. Os dados vem AO VIVO da uazapiGO (`groups/info`), nao do cache — quem abre um grupo
+para agir precisa dos participantes de agora, senao remove quem ja saiu. Participantes nunca
+vao para o banco.
+
+- **Nome** (25 caracteres, conta pontos de codigo: emoji vale 1) e **descricao** (512).
+- **Foto**: redimensionada NO NAVEGADOR (JPEG, ate 640x640) e enviada ao bucket. O servidor
+  nao decodifica imagem — seria CPU pesada no Worker. A rota so aceita URL do nosso bucket
+  (senao mandaria a uazapiGO buscar qualquer endereco). Tenta a URL e, se a uazapiGO recusar
+  por motivo que nao seja permissao/tamanho/formato, reenvia como base64 (V8 nao verificado).
+- **Configuracoes**: so admins falam / editam, aprovar entrada, quem adiciona, mensagens
+  temporarias. Uma por vez; o controle so muda quando a resposta volta com sucesso.
+- **Convite**: ver, copiar, renovar. Renovar INVALIDA o link antigo: confirmacao na tela e
+  `confirmar: true` exigido pela rota.
+- **Participantes**: promover, rebaixar, remover. Admin nao e removido direto.
+- **Sair do grupo**: exige digitar o nome do grupo; avisa que, sendo o unico admin, o grupo e
+  dissolvido.
+
+### Remocao em massa de compradores
+
+Cola uma lista, ve exatamente quem sairia, so entao remove. A analise roda no navegador contra
+a lista ao vivo; a rota rebusca o grupo antes de cada lote e recusa admins (a tela nao e a
+fronteira de seguranca, so a pre-visualizacao).
+- Nono digito: o mesmo celular aparece com e sem ele (5521987654321 e 552187654321). Casa nas
+  duas formas.
+- **Grupos em modo LID**: o JID e um identificador opaco, NAO um telefone. Sem `PhoneNumber`
+  o numero fica null e a pessoa nao e reconhecida por telefone — tratar o identificador como
+  telefone casaria a pessoa errada. A tela avisa quantos participantes estao nessa situacao.
+- Admins que casam ficam de fora e aparecem separados; "nao encontrados" e listado.
+- Lotes de 15, 10 s entre eles, para no primeiro erro. O espacamento entre lotes NAO e imposto
+  pelo servidor (nao ha registro de execucao como no envio de mensagens). Risco menor — nao
+  notifica ninguem —, mas existe.
+- O tamanho do lote (15) e prudencia minha: a spec nao documenta o maximo.
+
+### Bug evitado no cache
+
+A resposta de uma mutacao pode nao trazer `OwnerIsAdmin`. O mapeamento da listagem preenche
+padrao `false` — gravar isso por cima de um `true` faria a tela achar que o numero deixou de
+ser admin logo apos editar o grupo. Mutacoes usam `camposParaAtualizar()`, que so grava o que
+veio preenchido.
+
+### Verificado
+
+75 conferencias da logica de gestao (limites, 9o digito, modo LID, plano de remocao, lotes,
+cache parcial), 12 das dimensoes da foto, 57 de busca/filtro/links. Tela conferida no
+navegador com dados falsos: colar uma lista de 6 trechos produziu o resultado certo (2 saem,
+2 admins protegidos, 1 fora do grupo, 1 nome ignorado); confirmacao digitada trava com 3 e
+libera com 2; a remocao PARA no primeiro erro. As nove rotas de grupo devolvem 401 sem login.
+O servidor de desenvolvimento deu 404 em tudo uma vez (ate /login); reiniciar resolveu —
+problema do ambiente, nao de rota.
+
+### NAO verificado
+
+Como na fase 1, as rotas novas nao rodaram contra uazapiGO real: o que `groups/info` devolve
+(se traz `PhoneNumber` e `OwnerIsAdmin`), a troca de foto por URL, o limite real de
+participantes por chamada. Testar num grupo de teste antes de usar com cliente.
+
+### Ficou de fora desta fase
+
+Criar grupo, entrar por convite, comunidades e exportacao CSV — pelo uso descrito (poucos
+grupos ja existentes) nao sao prioridade. Boas-vindas (migration 016) e agendamento seguem
+nas fases 5 e 3.
+
+---
+
 ## 2026-10-24 — Modulo de grupos, fase 1: disparo de mensagem
 
 Entrega a prioridade declarada: listar os grupos de uma instancia, selecionar, escrever

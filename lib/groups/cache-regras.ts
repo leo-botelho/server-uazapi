@@ -1,5 +1,5 @@
 import type { UazapiGroup } from '@/lib/uazapi/group-types'
-import type { Json, Tables } from '@/types/database'
+import type { Json, Tables, UpdateTables } from '@/types/database'
 
 /**
  * Regras puras do cache de grupos: mapeamento, idade e validade.
@@ -65,4 +65,33 @@ export function idadeDoCacheEmMinutos(grupos: Pick<GrupoEmCache, 'fetched_at'>[]
 export function cacheEstaVelho(grupos: Pick<GrupoEmCache, 'fetched_at'>[], agora = Date.now()): boolean {
   const idade = idadeDoCacheEmMinutos(grupos, agora)
   return idade === null || idade >= TTL_DO_CACHE_MINUTOS
+}
+
+/**
+ * Campos do cache a atualizar a partir do `group` que uma MUTAÇÃO devolve.
+ *
+ * Só entra o que veio preenchido. Isso é diferente de `mapearGrupoParaLinha`
+ * (usado na listagem completa), que preenche padrões para campos ausentes: numa
+ * resposta de mutação `OwnerIsAdmin` pode simplesmente não vir, e gravar o
+ * padrão `false` por cima de um `true` faria a tela achar que o número deixou de
+ * ser admin logo depois de ele ter acabado de editar o grupo.
+ */
+export function camposParaAtualizar(g: UazapiGroup): UpdateTables<'group_cache'> {
+  const campos: UpdateTables<'group_cache'> = { fetched_at: new Date().toISOString() }
+
+  // Cada linha só entra se veio preenchida (nem undefined, nem null).
+  if (g.Name != null) campos.name = g.Name
+  if (g.Topic != null) campos.topic = g.Topic
+  if (g.IsAnnounce != null) campos.is_announce = g.IsAnnounce
+  if (g.IsLocked != null) campos.is_locked = g.IsLocked
+  if (g.IsEphemeral != null) campos.is_ephemeral = g.IsEphemeral
+  if (g.DisappearingTimer != null) campos.disappearing_timer = g.DisappearingTimer
+  if (g.IsJoinApprovalRequired != null) campos.is_join_approval_required = g.IsJoinApprovalRequired
+  if (g.MemberAddMode != null) campos.member_add_mode = g.MemberAddMode
+  if (g.invite_link != null) campos.invite_link = g.invite_link
+  if (g.OwnerIsAdmin != null) campos.owner_is_admin = g.OwnerIsAdmin
+  if (g.OwnerCanSendMessage != null) campos.owner_can_send = g.OwnerCanSendMessage
+  if (g.Participants) campos.participant_count = g.Participants.length
+
+  return campos
 }

@@ -3,9 +3,11 @@ import { getInstanceClient } from '@/lib/api-helpers'
 import type { UazapiClient } from '@/lib/uazapi/client'
 import type { Json } from '@/types/database'
 import {
+  camposParaAtualizar,
   mapearGrupoParaLinha,
   type GrupoEmCache,
 } from './cache-regras'
+import type { UazapiGroup } from '@/lib/uazapi/group-types'
 
 /**
  * Cache dos grupos de cada instância.
@@ -228,6 +230,34 @@ async function removerGruposQueSumiram(instanceId: string, vistos: Set<string>):
   return removidos
 }
 
+/**
+ * Guarda no cache o grupo que uma mutação devolveu, para a tela refletir a
+ * mudança sem depender de uma nova listagem (que exige o webhook `groups`, que
+ * este módulo não pode assinar por instância).
+ *
+ * Nunca lança: o cache é conveniência. A mudança no WhatsApp já aconteceu e não
+ * pode virar erro para o operador só porque o espelho local falhou.
+ */
+export async function atualizarCacheComGrupo(
+  instanceId: string,
+  grupo: UazapiGroup | undefined
+): Promise<void> {
+  if (!grupo?.JID) return
+
+  try {
+    const db = await createServiceClient()
+    const { error } = await db
+      .from('group_cache')
+      .update(camposParaAtualizar(grupo))
+      .eq('instance_id', instanceId)
+      .eq('group_jid', grupo.JID)
+
+    if (error) console.warn('[groups/cache] não foi possível atualizar o cache:', error.message)
+  } catch (err) {
+    console.warn('[groups/cache] falha ao atualizar o cache:', err instanceof Error ? err.message : String(err))
+  }
+}
+
 /** Todos os grupos em cache de uma instância, ordenados por nome. */
 export async function listarGruposEmCache(instanceId: string): Promise<GrupoEmCache[]> {
   const db = await createServiceClient()
@@ -257,5 +287,6 @@ export {
   cacheEstaVelho,
   idadeDoCacheEmMinutos,
   mapearGrupoParaLinha,
+  camposParaAtualizar,
 } from './cache-regras'
 export type { GrupoEmCache } from './cache-regras'

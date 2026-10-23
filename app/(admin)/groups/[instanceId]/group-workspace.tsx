@@ -203,6 +203,7 @@ export function GroupWorkspace({ instanceId, instanceName, grupos, precisaAtuali
         </div>
 
         <GroupList
+          instanceId={instanceId}
           grupos={grupos}
           selecionados={new Set(alvos)}
           busca={busca}
