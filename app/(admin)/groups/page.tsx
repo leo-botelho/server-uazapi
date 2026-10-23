@@ -1,12 +1,13 @@
 import { Suspense } from 'react'
 import Link from 'next/link'
-import { ChevronRight, Smartphone, UsersRound } from 'lucide-react'
+import { ChevronRight, Link as LinkIcon, Smartphone, UsersRound } from 'lucide-react'
 
 import { createClient } from '@/lib/supabase/server'
 import { verificarInstalacaoDeGrupos } from '@/lib/groups/install'
 import { MigrationPending } from '@/components/admin/groups/migration-pending'
 import { InstanceStatusBadge } from '@/components/admin/instance-status-badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 
@@ -100,14 +101,21 @@ function Carregando() {
 export default function GroupsPage() {
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="flex items-center gap-2 text-3xl font-bold tracking-tight">
-          <UsersRound className="size-7" aria-hidden />
-          Grupos
-        </h1>
-        <p className="text-muted-foreground">
-          Escolha a instância para ver e gerenciar os grupos dela
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="flex items-center gap-2 text-3xl font-bold tracking-tight">
+            <UsersRound className="size-7" aria-hidden />
+            Grupos
+          </h1>
+          <p className="text-muted-foreground">
+            Escolha a instância para ver e gerenciar os grupos dela
+          </p>
+        </div>
+
+        <Button variant="outline" render={<Link href="/groups/tools/deeplinks" />} nativeButton={false} className="gap-1.5">
+          <LinkIcon className="size-4" aria-hidden />
+          Links do WhatsApp
+        </Button>
       </div>
 
       <Suspense fallback={<Carregando />}>

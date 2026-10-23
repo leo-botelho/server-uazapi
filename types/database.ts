@@ -692,6 +692,8 @@ export type Database = {
           step_id: string
           run_at: string
           resolved_jids?: string[] | null
+          opened_at?: string | null
+          total?: number
           status?:
             | 'scheduled' | 'open' | 'running' | 'paused'
             | 'done' | 'failed' | 'canceled' | 'blocked_by_wa_limits'
@@ -703,6 +705,9 @@ export type Database = {
           last_action_at?: string | null
           blocked_reason?: string | null
           resolved_jids?: string[] | null
+          total?: number
+          succeeded?: number
+          failed?: number
         }
         Relationships: []
       }
@@ -734,6 +739,10 @@ export type Database = {
           seq: number
           not_before: string
           status?: 'pending' | 'running' | 'sent' | 'failed' | 'skipped' | 'canceled'
+          attempts?: number
+          executed_at?: string | null
+          error?: string | null
+          response?: Json | null
         }
         Update: {
           status?: 'pending' | 'running' | 'sent' | 'failed' | 'skipped' | 'canceled'

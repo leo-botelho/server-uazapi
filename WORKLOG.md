@@ -5,6 +5,102 @@ Registrar aqui toda implementação, fix e decisão técnica relevante ao final 
 
 ---
 
+## 2026-10-24 — Modulo de grupos, fase 1: disparo de mensagem
+
+Entrega a prioridade declarada: listar os grupos de uma instancia, selecionar, escrever
+(texto, midia ou botoes), marcar todos, e enviar com intervalo real entre cada grupo.
+Funciona sozinho — nao depende do agendador (fase 3).
+
+### Como o envio funciona
+
+O navegador e quem espera entre um grupo e o proximo (zero tempo de Worker). Mas o
+navegador NAO e a fronteira de seguranca. O fluxo tem tres rotas e o servidor decide tudo:
+
+1. `POST /api/groups/dispatch/start` — revalida conteudo, espacamento, teto de marcar todos,
+   permissao em cada grupo e pre-voo; grava a campanha. O CONTEUDO fica gravado aqui.
+2. `POST /api/groups/dispatch/one` — recebe so `{ runId, groupjid }`. Texto, intervalo e
+   modo de marcar todos vem do que foi gravado no passo 1, nunca da requisicao. Uma aba
+   adulterada nao consegue mandar outro texto, outro grupo nem ir mais rapido.
+3. `POST /api/groups/dispatch/finish` — encerra.
+
+### As travas, e onde cada uma mora
+
+- **Espacamento**: piso de 5 s, 60 s marcando todos. Banco (`check`), rota e tela.
+  A rota ainda impoe o intervalo ENTRE requisicoes: `reservarInstante()` grava
+  `last_action_at` com um UPDATE condicional ANTES de enviar. Duas requisicoes simultaneas
+  disputam a mesma linha e so uma passa. Sem isso a checagem "ja passou tempo?" seria lida e
+  gravada em momentos diferentes e as duas passariam.
+- **Marcar todos**: maximo de 10 grupos por execucao; acima de 3 exige digitar a quantidade.
+- **Portao `owner_can_send`**: grupo so-admin onde o numero nao e admin nao entra na selecao
+  e e recusado no servidor com o nome do grupo.
+- **Uma execucao por numero**: o espacamento e medido DENTRO de cada execucao; duas ao mesmo
+  tempo dobrariam a cadencia real sem nenhuma violar a propria regra. Execucao parada ha
+  mais de 10 min (aba fechada) e encerrada pelo proximo `start`.
+- **Pre-voo `wa_messages_limits`**: restricao do WhatsApp e instancia desconectada bloqueiam
+  sem saida. Cota esgotada bloqueia mas o operador pode liberar ("sei do risco"), porque uma
+  mensagem para grupo EXISTENTE provavelmente nao conta como conversa nova — ainda nao
+  verificado (V10). Consulta que falhou nao bloqueia: nao saber nao e estar bloqueado.
+- **463 do WhatsApp durante o envio**: a execucao vira `blocked_by_wa_limits` e o laco PARA.
+  Insistir num numero restrito e o que transforma restricao temporaria em banimento.
+- **Sem resposta nao e "nao enviou"**: timeout/queda de conexao marca o grupo como falhou com
+  o aviso "a mensagem pode ter sido entregue — confira o grupo", e a execucao para.
+
+### Decisao de desenho que evita mensagem duplicada
+
+Os items do envio pelo navegador nascem JA TERMINAIS (`sent`/`failed`), por INSERT, depois da
+chamada. Nunca ficam `pending` nem `running`. Se ficassem, o lease da migration 015
+(`reclaim_stale_group_items`) devolveria um item preso a fila e o agendador da fase 3 o
+reenviaria — duplicando uma mensagem que o navegador ja mandou. Consequencia: o trigger de
+rollup (so UPDATE) nao dispara, entao `recalcularContagem()` atualiza os contadores.
+
+### O cache de grupos
+
+`atualizarCacheDeGrupos()` processa UMA pagina (200) por vez e grava antes de pedir a proxima;
+nunca guarda a listagem inteira. Pede `noParticipants: true`. Grupos que sumiram sao removidos
+comparando por JID — nao por `fetched_at`, porque o relogio do Worker e o do Postgres podem
+divergir e apagaria linhas recem-gravadas. So apaga depois de listagem COMPLETA.
+Se a listagem sem participantes nao trouxer `OwnerIsAdmin`, o status de admin e inferido por
+`/chat/find { wa_isGroup_admin: true }`. O array de participantes nunca vai para o cache (LGPD).
+
+### Botoes
+
+Ate 3 (resposta rapida, link, copiar). Aviso na tela ao misturar resposta com link/copiar
+(o WhatsApp Web nao exibe a mensagem) e nota de que o WhatsApp pode descontinuar botoes.
+Dois tetos de tamanho que eu tinha posto (25 no rotulo, 60 no rodape) eram numeros que a spec
+NAO traz — troquei por tetos de sanidade sem alegar que vem do WhatsApp.
+
+### Verificado
+
+- 83 conferencias das regras de decisao (iniciar, enviar a um grupo, pre-voo, erros 463),
+  34 da validacao de arquivos, 52 de links/busca/rascunho, 28 do cache contra Postgres real
+  (o JSON do mapeamento entrando na RPC), 24 da sequencia exata das rotas em SQL — incluindo
+  que o agendador nao reivindica nada do envio pelo navegador e que a reserva atomica segura
+  o espacamento. `tsc` e `eslint` limpos.
+- Tela conferida no navegador com dados falsos: selecao, contador, estimativa de duracao,
+  piso de 60 s ao ligar marcar todos, dialogo com confirmacao digitada (botao travado com
+  "3", liberado com "4"), caminho de erro (volta ao compositor sem perder nada), aviso da
+  mistura de botoes. Achou e corrigiu um defeito: o seletor mostrava `resposta` em vez do
+  rotulo.
+
+### NAO verificado — precisa de teste real antes de confiar
+
+As rotas nunca rodaram contra um Supabase nem uma uazapiGO de verdade (sem credenciais
+locais). O que isso deixa em aberto:
+- forma das consultas PostgREST nas rotas (testei a logica em SQL, nao o cliente);
+- **V3**: `mentions: "all"` realmente marcar todos — e uma funcao de vitrine;
+- **V4**: a listagem com `noParticipants: true` devolver `OwnerIsAdmin`;
+- **V17**: botoes conviverem com `mentions: "all"`;
+- o upload `multipart` no Worker e o bucket `group-assets`.
+Rodar primeiro numa instancia de teste, com UM grupo so com numeros do operador.
+
+### Pendencia de infraestrutura
+
+O plano do Cloudflare (Free = 10 ms de CPU por invocacao; Paid = 30 s) nunca foi confirmado —
+o servidor MCP do Cloudflare precisa de autorizacao. Isso importa: a rota de atualizar a
+lista faz parse de JSON de ate 200 grupos por pagina. Se for Free, vale medir.
+
+---
+
 ## 2026-10-23 — Modulo de grupos, fase 0 (alicerce)
 
 Inicio do modulo de gerenciamento de grupos: listar, disparar mensagem em massa com

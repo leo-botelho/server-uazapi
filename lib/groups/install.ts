@@ -18,7 +18,7 @@ export type EstadoDaInstalacao =
   | { estado: 'pendente'; detalhe: string }
   | { estado: 'erro'; detalhe: string }
 
-function tabelaNaoExiste(error: { code?: string; message: string }): boolean {
+export function tabelaNaoExiste(error: { code?: string; message: string }): boolean {
   return (
     error.code === 'PGRST205' ||   // tabela ausente no schema cache do PostgREST
     error.code === '42P01'   ||   // undefined_table
