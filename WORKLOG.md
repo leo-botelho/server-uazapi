@@ -5,6 +5,124 @@ Registrar aqui toda implementação, fix e decisão técnica relevante ao final 
 
 ---
 
+## 2026-10-23 — Modulo de grupos, fase 0 (alicerce)
+
+Inicio do modulo de gerenciamento de grupos: listar, disparar mensagem em massa com
+intervalo entre cada grupo, alterar nome/foto/descricao, gerenciar participantes — tudo
+por instancia e agendavel. Esta entrada cobre so o alicerce; nenhuma tela de operacao
+ainda. O plano completo tem 6 fases, com o disparo de mensagem como fase 1.
+
+### Decisao de arquitetura: o agendador e nosso, nao o `/sender/*` da uazapi
+
+O motor de campanha da uazapiGO parecia servir (tem `scheduled_for` e `delayMin/delayMax`
+proprios, e custaria zero de Worker), mas tres pedidos centrais sao estruturalmente
+impossiveis nele:
+- **marcar todos**: `/sender/advanced` nao tem o campo `mentions`;
+- **trocar nome/foto/descricao**: nao existe endpoint de campanha para isso;
+- **remover participantes**: idem.
+Alem de nao dar para editar nada depois de criada a campanha.
+
+A duvida era o limite de CPU do Cloudflare, que ja estourou neste projeto. Verificado na
+documentacao: **o limite e de CPU, nao de tempo de parede** — espera de I/O nao conta, e
+request HTTP nao tem teto de duracao enquanto o cliente estiver conectado (so handler de
+cron tem, 15 min). Ou seja, **dormir entre envios e de graca**. O incidente anterior veio
+de materializar JSON grande (`delete ... .select('id')`), nao de demorar.
+
+Aritmetica que saiu disso, com cron de 1 min e orcamento de 50 s por passada:
+espacamento de 10 s = 5 envios/passada (50 grupos em ~10 min); de 60 s = 1 por passada,
+**sem dormir nada** (50 grupos em ~50 min). O espacamento entre passadas vem do
+`not_before` gravado em cada item, nao de queimar tempo de parede. Essa lentidao e o
+recurso, nao a limitacao.
+
+### Modelo de dados em quatro niveis (migration 015)
+
+```
+group_tasks        a campanha (instancia, alvos, espacamento, seguranca)
+  group_task_steps     passos ordenados — cada um com seu tipo e agenda
+    group_task_runs      uma ocorrencia (passo x data/hora)
+      group_task_items     uma linha por (ocorrencia x grupo) — A FILA
+```
+
+O nivel de **steps** e o que faz "alteracoes diferentes e mensagens diferentes em dias
+diferentes" caber: tres niveis expressariam "a mesma mensagem em N datas", mas nao "N
+mensagens diferentes em offsets relativos" (as sequencias automatizadas).
+Varias datas = `schedule_mode='absolute'` com `absolute_ats[]`. Sequencia =
+`schedule_mode='offset'` com `offset_minutes` a partir de `starts_at`.
+
+Os items sao materializados **tarde**, quando a ocorrencia vence: editar uma tarefa
+agendada vira um UPDATE simples, e ocorrencias distantes nao ocupam linha.
+
+### Travas que moram no banco, nao so na tela
+
+- `check (spacing_seconds >= 5)` e `check (not mention_all or spacing_seconds >= 60)`.
+  Marcar todos em muitos grupos e a acao com maior risco de banimento; a linha que viole
+  isso nao consegue existir, venha de onde vier.
+- `unique (run_id, group_jid)` + `unique (step_id, run_at)`: materializar duas vezes e
+  impossivel.
+- **Nao existe flag de "enviado" no nivel do lote.** Cada item e individualmente terminal,
+  com lease proprio (`claimed_at`). E isso que faz uma passada interrompida no meio
+  (deploy, abort, eviction) nao duplicar envio. `reclaim_stale_group_items()` devolve o
+  que ficou preso, e `attempts >= 3` encerra em vez de reciclar para sempre.
+- `claim_group_task_items()` faz UMA ida ao banco e ja devolve credenciais da instancia e
+  os portoes `owner_is_admin`/`owner_can_send` — o Worker nao resolve servidor/token nem
+  faz segunda consulta.
+
+### Verificado de fato
+
+Migration executada em Postgres real (PGlite) com 65 conferencias, incluindo os casos que
+importam: as travas rejeitam mesmo, materializar duas vezes nao duplica, o espacamento sai
+nos segundos certos, o lease devolve item preso, tarefa pausada nao e drenada, e uma
+listagem sem avatar nao apaga o avatar ja guardado. Helper de botoes com mais 26
+conferencias (inclusive recusa de `javascript:` e de `|` no rotulo).
+
+### Botoes na mensagem (ate 3: resposta rapida, link, copiar)
+
+Botoes nao sao campos na API: sao **strings codificadas** em `choices[]` separadas por
+`|`. `lib/groups/buttons.ts` faz a codificacao a partir de um formulario tipado, porque um
+`|` solto no texto do botao quebra a mensagem sem dar erro.
+Dois avisos da propria spec ficaram registrados no codigo: (1) misturar botao de resposta
+com link/copiar/ligar faz o WhatsApp Web exibir "Nao e possivel exibir esta mensagem";
+(2) "os recursos de botoes interativos e listas podem ser descontinuados a qualquer
+momento sem aviso previo" — campanha agendada para semanas a frente nao deve depender so
+deles.
+O teto de 3 e **trava nossa**, nao da API: a spec nao documenta maximo nenhum e os
+exemplos dela chegam a mostrar 4. O limite de 3 e o do WhatsApp para botoes de resposta.
+
+### Seguranca
+
+- `middleware.ts`: `/groups` entrou em `ADMIN_ROUTES`. **Sem essa linha o modulo inteiro
+  ficaria acessivel sem login.**
+- Ganho de brinde no mesmo arquivo: `api/monitor/tick` nao estava excluido do `matcher`,
+  entao o cron sem cookie pagava a construcao do cliente SSR e um `auth.getUser()` 720x por
+  dia a toa — justamente na rota que disparava os alarmes de CPU. Excluido junto com
+  `api/groups/scheduler` e `l/`.
+- `lib/groups/install.ts` + banner na tela: migration nao aplicada vira aviso explicando o
+  que fazer, em vez de 500. `withMissingColumnFallback` NAO cobre este caso — ele trata
+  coluna faltando (PGRST204); tabela faltando e outro codigo.
+
+### Nota sobre o `shadcn add`
+
+O CLI gerou os cinco primitivos importando `from "cn"` em vez do alias do projeto, e
+**instalou um pacote npm chamado `cn`** que nada aqui usa. Imports corrigidos para
+`@/lib/utils` e o pacote removido. Vale conferir isso sempre que rodar o CLI.
+
+Tambem nao foi adicionado o `calendar` do shadcn: ele traz o `react-day-picker` como
+dependencia nova so para um formulario onde a pessoa digita a data.
+`components/ui/datetime-field.tsx` faz o mesmo com `<input type=date>` + `<input type=time>`
+e cuida da conversao hora local <-> ISO UTC, que e onde normalmente se erra.
+
+### Pendencias
+
+- **Aplicar a migration 015 no Supabase** (alem da 013 e 014, que seguem pendentes).
+  Nada do modulo funciona antes disso — a tela avisa.
+- Verificacao de interacao na tela ficou por fazer: o dev server local trava com o
+  `write EOF` do Turbopack nesta maquina Windows (problema pre-existente, ja reproduzido
+  no commit original). A renderizacao foi conferida; o clique nao.
+- O proprio Next 16 avisa que o arquivo `middleware` esta descontinuado em favor de
+  `proxy`. Nao mexi: e mudanca de convencao que afeta o arquivo inteiro.
+
+---
+
 ## 2026-10-23 — Instancias excluidas no uazapiGO deixavam cadastro orfao no painel
 
 Sintoma: duas instancias foram excluidas no painel do uazapiGO e continuaram aparecendo no sistema,

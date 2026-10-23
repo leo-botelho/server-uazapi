@@ -10,6 +10,33 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[]
 
+/**
+ * O que um passo de tarefa de grupo faz.
+ *
+ * Espelha o CHECK de `group_task_steps.kind` na migration 015 — mexer num lado
+ * sem mexer no outro faz a escrita falhar calada no PostgREST.
+ */
+export type GroupTaskKind =
+  | 'send_text'
+  | 'send_media'
+  | 'send_buttons'
+  | 'send_poll'
+  | 'update_name'
+  | 'update_description'
+  | 'update_image'
+  | 'update_announce'
+  | 'update_locked'
+  | 'update_join_approval'
+  | 'update_member_add_mode'
+  | 'update_ephemeral'
+  | 'participants_add'
+  | 'participants_remove'
+  | 'participants_promote'
+  | 'participants_demote'
+  | 'reset_invite'
+  | 'leave'
+  | 'export_participants'
+
 export type Database = {
   public: {
     Tables: {
@@ -434,6 +461,290 @@ export type Database = {
         }
         Relationships: []
       }
+
+      // ── Módulo de grupos (migration 015) ──────────────────────────────────
+
+      /**
+       * Cache dos grupos de cada instância.
+       *
+       * ⚠️ Não é alimentado por webhook: o evento `groups` só existe no webhook
+       * GLOBAL, e o webhook POR INSTÂNCIA pertence aos agentes de IA no n8n.
+       * Atualiza por TTL, por botão, e pelo `group` que toda mutação devolve.
+       */
+      group_cache: {
+        Row: {
+          instance_id: string
+          group_jid: string
+          name: string | null
+          topic: string | null
+          owner_jid: string | null
+          image_url: string | null
+          /** Quantidade, nunca a lista: o array de participantes é dado pessoal. */
+          participant_count: number | null
+          /** Portão de toda edição: somos admin deste grupo? */
+          owner_is_admin: boolean
+          /** Portão de todo envio: podemos falar neste grupo? */
+          owner_can_send: boolean
+          is_announce: boolean | null
+          is_locked: boolean | null
+          is_parent: boolean | null
+          is_join_approval_required: boolean | null
+          member_add_mode: string | null
+          is_ephemeral: boolean | null
+          disappearing_timer: number | null
+          linked_parent_jid: string | null
+          addressing_mode: string | null
+          invite_link: string | null
+          group_created: string | null
+          raw: Json | null
+          fetched_at: string
+        }
+        Insert: {
+          instance_id: string
+          group_jid: string
+          name?: string | null
+          topic?: string | null
+          owner_jid?: string | null
+          image_url?: string | null
+          participant_count?: number | null
+          owner_is_admin?: boolean
+          owner_can_send?: boolean
+          is_announce?: boolean | null
+          is_locked?: boolean | null
+          is_parent?: boolean | null
+          is_join_approval_required?: boolean | null
+          member_add_mode?: string | null
+          is_ephemeral?: boolean | null
+          disappearing_timer?: number | null
+          linked_parent_jid?: string | null
+          addressing_mode?: string | null
+          invite_link?: string | null
+          group_created?: string | null
+          raw?: Json | null
+          fetched_at?: string
+        }
+        Update: {
+          name?: string | null
+          topic?: string | null
+          owner_jid?: string | null
+          image_url?: string | null
+          participant_count?: number | null
+          owner_is_admin?: boolean
+          owner_can_send?: boolean
+          is_announce?: boolean | null
+          is_locked?: boolean | null
+          is_parent?: boolean | null
+          is_join_approval_required?: boolean | null
+          member_add_mode?: string | null
+          is_ephemeral?: boolean | null
+          disappearing_timer?: number | null
+          linked_parent_jid?: string | null
+          addressing_mode?: string | null
+          invite_link?: string | null
+          group_created?: string | null
+          raw?: Json | null
+          fetched_at?: string
+        }
+        Relationships: []
+      }
+
+      group_media: {
+        Row: {
+          id: string
+          instance_id: string | null
+          bucket: string
+          path: string
+          public_url: string
+          mime: string
+          bytes: number
+          width: number | null
+          height: number | null
+          purpose: 'group_image' | 'message_media' | 'export'
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          instance_id?: string | null
+          bucket?: string
+          path: string
+          public_url: string
+          mime: string
+          bytes: number
+          width?: number | null
+          height?: number | null
+          purpose: 'group_image' | 'message_media' | 'export'
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          public_url?: string
+          width?: number | null
+          height?: number | null
+        }
+        Relationships: []
+      }
+
+      group_tasks: {
+        Row: {
+          id: string
+          instance_id: string
+          name: string
+          target_jids: string[]
+          /** Segundos entre um grupo e o próximo. Mínimo 5; 60 quando marca todos. */
+          spacing_seconds: number
+          spacing_jitter_pct: number
+          mention_all: boolean
+          starts_at: string | null
+          status: 'draft' | 'scheduled' | 'running' | 'paused' | 'done' | 'canceled' | 'blocked'
+          blocked_reason: string | null
+          wa_limits_snapshot: Json | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          instance_id: string
+          name: string
+          target_jids: string[]
+          spacing_seconds?: number
+          spacing_jitter_pct?: number
+          mention_all?: boolean
+          starts_at?: string | null
+          status?: 'draft' | 'scheduled' | 'running' | 'paused' | 'done' | 'canceled' | 'blocked'
+          blocked_reason?: string | null
+          wa_limits_snapshot?: Json | null
+          created_by?: string | null
+        }
+        Update: {
+          name?: string
+          target_jids?: string[]
+          spacing_seconds?: number
+          spacing_jitter_pct?: number
+          mention_all?: boolean
+          starts_at?: string | null
+          status?: 'draft' | 'scheduled' | 'running' | 'paused' | 'done' | 'canceled' | 'blocked'
+          blocked_reason?: string | null
+          wa_limits_snapshot?: Json | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+
+      group_task_steps: {
+        Row: {
+          id: string
+          task_id: string
+          step_order: number
+          kind: GroupTaskKind
+          payload: Json
+          schedule_mode: 'absolute' | 'offset'
+          /** Uma ocorrência por data/hora desta lista. */
+          absolute_ats: string[] | null
+          /** Drip: ocorre em group_tasks.starts_at + offset_minutes. */
+          offset_minutes: number | null
+          recurrence: Json | null
+        }
+        Insert: {
+          id?: string
+          task_id: string
+          step_order: number
+          kind: GroupTaskKind
+          payload: Json
+          schedule_mode: 'absolute' | 'offset'
+          absolute_ats?: string[] | null
+          offset_minutes?: number | null
+          recurrence?: Json | null
+        }
+        Update: {
+          step_order?: number
+          kind?: GroupTaskKind
+          payload?: Json
+          schedule_mode?: 'absolute' | 'offset'
+          absolute_ats?: string[] | null
+          offset_minutes?: number | null
+        }
+        Relationships: []
+      }
+
+      group_task_runs: {
+        Row: {
+          id: string
+          task_id: string
+          step_id: string
+          run_at: string
+          /** Alvos fotografados na abertura: editar a tarefa não reescreve o histórico. */
+          resolved_jids: string[] | null
+          opened_at: string | null
+          status:
+            | 'scheduled' | 'open' | 'running' | 'paused'
+            | 'done' | 'failed' | 'canceled' | 'blocked_by_wa_limits'
+          last_action_at: string | null
+          total: number
+          succeeded: number
+          failed: number
+          blocked_reason: string | null
+        }
+        Insert: {
+          id?: string
+          task_id: string
+          step_id: string
+          run_at: string
+          resolved_jids?: string[] | null
+          status?:
+            | 'scheduled' | 'open' | 'running' | 'paused'
+            | 'done' | 'failed' | 'canceled' | 'blocked_by_wa_limits'
+        }
+        Update: {
+          status?:
+            | 'scheduled' | 'open' | 'running' | 'paused'
+            | 'done' | 'failed' | 'canceled' | 'blocked_by_wa_limits'
+          last_action_at?: string | null
+          blocked_reason?: string | null
+          resolved_jids?: string[] | null
+        }
+        Relationships: []
+      }
+
+      /**
+       * A fila de trabalho.
+       *
+       * ⚠️ Não existe flag de "enviado" no nível do lote: cada item é
+       * individualmente terminal, com lease próprio (`claimed_at`). É isso que
+       * faz uma passada interrompida no meio não duplicar envio.
+       */
+      group_task_items: {
+        Row: {
+          id: number
+          run_id: string
+          group_jid: string
+          seq: number
+          not_before: string
+          status: 'pending' | 'running' | 'sent' | 'failed' | 'skipped' | 'canceled'
+          attempts: number
+          claimed_at: string | null
+          executed_at: string | null
+          error: string | null
+          response: Json | null
+        }
+        Insert: {
+          run_id: string
+          group_jid: string
+          seq: number
+          not_before: string
+          status?: 'pending' | 'running' | 'sent' | 'failed' | 'skipped' | 'canceled'
+        }
+        Update: {
+          status?: 'pending' | 'running' | 'sent' | 'failed' | 'skipped' | 'canceled'
+          attempts?: number
+          claimed_at?: string | null
+          executed_at?: string | null
+          error?: string | null
+          response?: Json | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -473,6 +784,62 @@ export type Database = {
           custo_usd: number
           total_tokens: number
         }[]
+      }
+
+      // ── Módulo de grupos (migration 015) ──────────────────────────────────
+
+      /**
+       * Materializa as ocorrências vencidas e reivindica até `p_limit` items
+       * com lease, já com as credenciais da instância e os portões do grupo.
+       *
+       * UMA ida ao banco: o Worker não resolve servidor/token por conta própria.
+       * `p_horizon_seconds` traz também os items que vencem dentro do orçamento
+       * da passada — é assim que um espaçamento curto rende vários envios numa
+       * passada só, com a rota dormindo entre eles.
+       */
+      claim_group_task_items: {
+        Args: {
+          p_limit?: number
+          p_lease_minutes?: number
+          p_horizon_seconds?: number
+        }
+        Returns: {
+          item_id: number
+          run_id: string
+          task_id: string
+          group_jid: string
+          seq: number
+          not_before: string
+          kind: GroupTaskKind
+          payload: Json
+          instance_id: string
+          uazapi_token: string
+          server_url: string | null
+          admin_token: string | null
+          spacing_seconds: number
+          spacing_jitter_pct: number
+          mention_all: boolean
+          owner_is_admin: boolean
+          owner_can_send: boolean
+          group_name: string | null
+        }[]
+      }
+      open_due_group_runs: {
+        Args: Record<string, never>
+        Returns: number
+      }
+      /** Devolve à fila os items cujo lease venceu. Após 3 tentativas, falha. */
+      reclaim_stale_group_items: {
+        Args: { p_minutes?: number }
+        Returns: number
+      }
+      refresh_group_cache_upsert: {
+        Args: { p_instance: string; p_rows: Json }
+        Returns: number
+      }
+      purge_group_history: {
+        Args: { p_cutoff: string; p_limit?: number }
+        Returns: number
       }
     }
     Enums: {

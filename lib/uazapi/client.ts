@@ -3,6 +3,18 @@ import type {
   ProxyCity, GlobalWebhookConfig, GlobalWebhookResponse,
   WaMessagesLimits, WebhookDeliveryError, InstanceWebhookConfig, InstanceProxy, AsyncQueueStatus,
 } from './types'
+import type {
+  UazapiGroup, UazapiGroupMutation, UazapiGroupListPage, UazapiParticipantsResult,
+  UazapiInviteReset, UazapiEphemeralDuration, UazapiMemberAddMode, UazapiParticipantAction,
+  UazapiChatDetails, UazapiChatFindPage, UazapiSendResult, UazapiMediaType, UazapiMenuType,
+  UazapiMentions,
+} from './group-types'
+
+/**
+ * Listagens de grupo são lentas: com muitos grupos e `force: true` o uazapiGO
+ * passa folgado dos 15 s padrão.
+ */
+const LIST_TIMEOUT_MS = 30_000
 
 /**
  * Remove todo espaco em branco de URLs e tokens vindos de secrets.
@@ -145,6 +157,11 @@ function createUazapiClient(baseUrl: string, defaultAdminToken: string) {
     // Os webhooks individuais pertencem aos agentes de IA no n8n — cada instância
     // tem uma URL única cadastrada lá. Sobrescrevê-los derruba o agente do cliente.
     // O painel só usa o webhook GLOBAL (abaixo) para eventos `connection`.
+    //
+    // Isso vale também para o módulo de grupos: ele NÃO assina webhook por
+    // instância para saber de entradas em grupo. O evento `groups` entra no
+    // webhook GLOBAL, que é do painel, e o cache de grupos se mantém por TTL,
+    // por botão e pelo objeto `group` que toda mutação já devolve.
 
     // Send text message — used internally for WhatsApp disconnect alerts
     sendText: (token: string, to: string, text: string) =>
@@ -219,6 +236,293 @@ function createUazapiClient(baseUrl: string, defaultAdminToken: string) {
         method: 'POST',
         body: JSON.stringify(config),
       })),
+
+    // ─── Grupos ───────────────────────────────────────────────────────────
+    //
+    // Todos usam o token DA INSTÂNCIA. O id do grupo é o JID completo
+    // (`120363...@g.us`) e o campo se chama `groupjid`, tudo minúsculo.
+    // As exceções de caixa estão marcadas uma a uma — errar não dá erro, o
+    // campo só é ignorado.
+
+    groups: {
+      /**
+       * GET /group/list — listagem direta, sem paginação.
+       * ⚠️ Na query o parâmetro é `noparticipants`, TUDO MINÚSCULO
+       * (no corpo do POST abaixo ele é `noParticipants`, camelCase).
+       */
+      listAll: (token: string, opts: { force?: boolean; noParticipants?: boolean } = {}) =>
+        request<{ groups: UazapiGroup[] }>(
+          `/group/list?force=${opts.force ? 'true' : 'false'}` +
+          `&noparticipants=${opts.noParticipants ? 'true' : 'false'}`,
+          { token, timeoutMs: LIST_TIMEOUT_MS }
+        ),
+
+      /**
+       * POST /group/list — com busca e paginação. `limit` máximo 1000.
+       * ⚠️ Aqui o campo é `noParticipants`, camelCase.
+       */
+      listPage: (token: string, body: {
+        limit?: number
+        offset?: number
+        /** Filtra por nome ou JID. */
+        search?: string
+        force?: boolean
+        noParticipants?: boolean
+      }) =>
+        request<UazapiGroupListPage>('/group/list', {
+          method: 'POST',
+          token,
+          body: JSON.stringify({ limit: 200, offset: 0, ...body }),
+          timeoutMs: LIST_TIMEOUT_MS,
+        }),
+
+      info: (token: string, body: {
+        groupjid: string
+        getInviteLink?: boolean
+        /** Traz os pedidos pendentes em `request_participants`. */
+        getRequestsParticipants?: boolean
+        force?: boolean
+      }) =>
+        request<UazapiGroup>('/group/info', {
+          method: 'POST', token, body: JSON.stringify(body),
+        }),
+
+      /**
+       * POST /group/updateName — exige admin.
+       * ⚠️ Máximo de 25 caracteres (criar um grupo aceita 100).
+       */
+      updateName: (token: string, body: { groupjid: string; name: string }) =>
+        request<UazapiGroupMutation>('/group/updateName', {
+          method: 'POST', token, body: JSON.stringify(body),
+        }),
+
+      /**
+       * POST /group/updateDescription — exige admin.
+       * ⚠️ Máximo de 512 caracteres; acima disso a API devolve 413.
+       */
+      updateDescription: (token: string, body: { groupjid: string; description: string }) =>
+        request<UazapiGroupMutation>('/group/updateDescription', {
+          method: 'POST', token, body: JSON.stringify(body),
+        }),
+
+      /**
+       * POST /group/updateImage — exige admin.
+       * `image` aceita URL, base64, ou o literal `'remove'`/`'delete'`.
+       * ⚠️ O WhatsApp exige JPEG de no máximo 640x640: 413 se for grande
+       * demais, 415 se não for JPEG.
+       */
+      updateImage: (token: string, body: { groupjid: string; image: string }) =>
+        request<UazapiGroupMutation>('/group/updateImage', {
+          method: 'POST', token, body: JSON.stringify(body),
+        }),
+
+      /** `announce: true` = só admin manda mensagem. Exige admin. */
+      updateAnnounce: (token: string, body: { groupjid: string; announce: boolean }) =>
+        request<UazapiGroupMutation>('/group/updateAnnounce', {
+          method: 'POST', token, body: JSON.stringify(body),
+        }),
+
+      /** `locked: true` = só admin edita nome/foto/descrição. Exige admin. */
+      updateLocked: (token: string, body: { groupjid: string; locked: boolean }) =>
+        request<UazapiGroupMutation>('/group/updateLocked', {
+          method: 'POST', token, body: JSON.stringify(body),
+        }),
+
+      /** ⚠️ O campo do corpo é PascalCase: `IsJoinApprovalRequired`. */
+      updateJoinApproval: (token: string, body: { groupjid: string; IsJoinApprovalRequired: boolean }) =>
+        request<UazapiGroupMutation>('/group/updateJoinApproval', {
+          method: 'POST', token, body: JSON.stringify(body),
+        }),
+
+      /** ⚠️ O campo do corpo é PascalCase: `MemberAddMode`. */
+      updateMemberAddMode: (token: string, body: { groupjid: string; MemberAddMode: UazapiMemberAddMode }) =>
+        request<UazapiGroupMutation>('/group/updateMemberAddMode', {
+          method: 'POST', token, body: JSON.stringify(body),
+        }),
+
+      /** Mensagens temporárias. `duration` aceita string ou inteiro. Exige admin. */
+      ephemeral: (token: string, body: { groupjid: string; duration: UazapiEphemeralDuration }) =>
+        request<UazapiGroupMutation>('/group/ephemeral', {
+          method: 'POST', token, body: JSON.stringify(body),
+        }),
+
+      /**
+       * POST /group/updateParticipants — exige admin.
+       * Números em formato internacional sem `+`, ou JIDs completos.
+       * O resultado vem por número em `groupUpdated[]`, com `Error: 0` = sucesso.
+       * ⚠️ A spec não documenta tamanho máximo do lote (criar grupo limita a 50).
+       */
+      updateParticipants: (token: string, body: {
+        groupjid: string
+        action: UazapiParticipantAction
+        participants: string[]
+      }) =>
+        request<UazapiParticipantsResult>('/group/updateParticipants', {
+          method: 'POST', token, body: JSON.stringify(body),
+        }),
+
+      /** `name` até 100 caracteres aqui; `participants` de 1 a 50. */
+      create: (token: string, body: { name: string; participants: string[] }) =>
+        request<UazapiGroupMutation>('/group/create', {
+          method: 'POST', token, body: JSON.stringify(body),
+        }),
+
+      /** `invitecode` aceita o código ou a URL completa do convite. */
+      join: (token: string, body: { invitecode: string }) =>
+        request<UazapiGroupMutation>('/group/join', {
+          method: 'POST', token, body: JSON.stringify(body),
+        }),
+
+      /** Espia um grupo pelo convite, antes de entrar. */
+      inviteInfo: (token: string, body: { invitecode: string }) =>
+        request<UazapiGroup>('/group/inviteInfo', {
+          method: 'POST', token, body: JSON.stringify(body),
+        }),
+
+      /** ⚠️ Se o número for o ÚLTIMO admin, o grupo é DISSOLVIDO. */
+      leave: (token: string, body: { groupjid: string }) =>
+        request<UazapiGroupMutation>('/group/leave', {
+          method: 'POST', token, body: JSON.stringify(body),
+        }),
+
+      /**
+       * POST /group/resetInviteCode — invalida o link antigo e gera outro.
+       * ⚠️ Devolve `InviteLink` com I maiúsculo; o objeto `Group` usa
+       * `invite_link`. Exige admin.
+       */
+      resetInviteCode: (token: string, body: { groupjid: string }) =>
+        request<UazapiInviteReset>('/group/resetInviteCode', {
+          method: 'POST', token, body: JSON.stringify(body),
+        }),
+    },
+
+    community: {
+      create: (token: string, body: { name: string }) =>
+        request<{ group?: UazapiGroup; failed?: string[] }>('/community/create', {
+          method: 'POST', token, body: JSON.stringify(body),
+        }),
+
+      /** ⚠️ Os campos são `community` (JID da comunidade) e `groupjids` (array). */
+      editGroups: (token: string, body: {
+        community: string
+        action: 'add' | 'remove'
+        groupjids: string[]
+      }) =>
+        request<{ message?: string; success?: string[]; failed?: string[] }>('/community/editgroups', {
+          method: 'POST', token, body: JSON.stringify(body),
+        }),
+    },
+
+    chat: {
+      /**
+       * POST /chat/details — funciona para grupo. É daqui que sai o avatar.
+       * ⚠️ `image` só vem com `preview: false`; `imagePreview` só com `true`.
+       */
+      details: (token: string, body: { number: string; preview?: boolean }) =>
+        request<UazapiChatDetails>('/chat/details', {
+          method: 'POST', token, body: JSON.stringify(body),
+        }),
+
+      /** POST /chat/find — o caminho mais barato para listar grupos COM avatar. */
+      find: (token: string, body: {
+        operator?: 'AND' | 'OR'
+        sort?: string
+        limit?: number
+        offset?: number
+        wa_isGroup?: boolean
+        wa_isGroup_admin?: boolean
+        search?: string
+      }) =>
+        request<UazapiChatFindPage>('/chat/find', {
+          method: 'POST',
+          token,
+          body: JSON.stringify(body),
+          timeoutMs: LIST_TIMEOUT_MS,
+        }),
+
+      /** Confere se os números existem no WhatsApp — usar antes de adicionar. */
+      check: (token: string, body: { numbers: string[] }) =>
+        request<{ chats?: { query: string; isInWhatsapp?: boolean; jid?: string; groupName?: string }[] }>(
+          '/chat/check', { method: 'POST', token, body: JSON.stringify(body) }
+        ),
+    },
+
+    send: {
+      /**
+       * POST /send/text. `number` aceita JID de grupo (`...@g.us`).
+       * `mentions: 'all'` marca todo mundo — só funciona em grupo.
+       * `delay` é em MILISSEGUNDOS e mostra "digitando…" durante a espera.
+       */
+      text: (token: string, body: {
+        number: string
+        text: string
+        mentions?: UazapiMentions
+        delay?: number
+        linkPreview?: boolean
+        replyid?: string
+        track_source?: string
+        track_id?: string
+      }) =>
+        request<UazapiSendResult>('/send/text', {
+          method: 'POST', token, body: JSON.stringify(body),
+        }),
+
+      /** POST /send/media. `file` aceita URL ou base64; `text` é a legenda. */
+      media: (token: string, body: {
+        number: string
+        type: UazapiMediaType
+        file: string
+        text?: string
+        docName?: string
+        mimetype?: string
+        mentions?: UazapiMentions
+        delay?: number
+      }) =>
+        request<UazapiSendResult>('/send/media', {
+          method: 'POST', token, body: JSON.stringify(body),
+        }),
+
+      /**
+       * POST /send/menu — botões, listas, enquetes e carrosséis.
+       *
+       * ⚠️ Os botões não são campos estruturados: vão como strings codificadas
+       * em `choices[]`. Use `montarChoicesDeBotoes()` em `lib/groups/buttons.ts`
+       * em vez de montar a string à mão.
+       */
+      menu: (token: string, body: {
+        number: string
+        type: UazapiMenuType
+        text: string
+        choices: string[]
+        footerText?: string
+        listButton?: string
+        selectableCount?: number
+        /** URL ou base64 de uma imagem acima dos botões. */
+        imageButton?: string
+        mentions?: UazapiMentions
+        delay?: number
+      }) =>
+        request<UazapiSendResult>('/send/menu', {
+          method: 'POST', token, body: JSON.stringify(body),
+        }),
+    },
+
+    message: {
+      /**
+       * POST /message/find — busca mensagens.
+       * Com `{ id }` lê uma mensagem específica: é o único caminho existente
+       * para ler a apuração de uma enquete (campo `vote`).
+       */
+      find: (token: string, body: {
+        id?: string
+        chatid?: string
+        limit?: number
+        offset?: number
+      }) =>
+        request<{ messages: Record<string, unknown>[]; hasMore?: boolean }>('/message/find', {
+          method: 'POST', token, body: JSON.stringify(body),
+        }),
+    },
   }
 }
 

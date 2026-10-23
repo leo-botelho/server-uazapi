@@ -12,6 +12,7 @@ import {
   LogOut,
   Server,
   UserCircle,
+  UsersRound,
 } from 'lucide-react'
 import type { User } from '@supabase/supabase-js'
 
@@ -37,6 +38,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { label: 'Painel', href: '/dashboard', Icon: LayoutDashboard },
   { label: 'Instâncias', href: '/instances', Icon: Smartphone },
+  { label: 'Grupos', href: '/groups', Icon: UsersRound },
   { label: 'Clientes', href: '/clients', Icon: Users },
   { label: 'Servidores', href: '/servers', Icon: Server },
   { label: 'Alertas', href: '/alerts', Icon: Bell },
