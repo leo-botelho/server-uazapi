@@ -6,7 +6,7 @@ import { avaliarEnvioAoGrupo } from '@/lib/groups/dispatch'
 import { lerErroDaUazapi } from '@/lib/groups/errors'
 import { proximaEspera } from '@/lib/groups/limits'
 import { montarPedidoDeEnvio, validarConteudo, type PedidoDeEnvio } from '@/lib/groups/payloads'
-import { recalcularContagem, reservarInstante } from '@/lib/groups/runs'
+import { reservarInstante } from '@/lib/groups/runs'
 import type { UazapiClient } from '@/lib/uazapi/client'
 import type { Json } from '@/types/database'
 
@@ -51,7 +51,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // ── O que foi aprovado no início ───────────────────────────────────────────
   const { data: execucao } = await db
     .from('group_task_runs')
-    .select('id, task_id, step_id, status, resolved_jids, last_action_at, total')
+    .select('id, task_id, step_id, status, resolved_jids, last_action_at')
     .eq('id', runId)
     .maybeSingle()
 
@@ -178,7 +178,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     console.error(`[groups/dispatch/one] ${groupjid} enviado, mas o registro falhou:`, erroDoItem.message)
   }
 
-  const contagem = await recalcularContagem(db, runId, execucao.total)
+  // Os contadores da ocorrência NÃO são recalculados aqui: seriam mais 3 idas ao
+  // banco a cada grupo, e a tela já acompanha o progresso pelo que esta rota
+  // devolve. `dispatch/finish` recalcula uma vez no fim. No plano Free do
+  // Cloudflare cada chamada externa pesa — são 50 por requisição, e 10 ms de CPU.
 
   // ── Restrição do WhatsApp: PARA ────────────────────────────────────────────
   // Insistir num número que o WhatsApp acabou de restringir é o que transforma
@@ -201,7 +204,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       ...(messageId ? { messageId } : {}),
       ...(mensagemDeErro ? { error: mensagemDeErro } : {}),
     },
-    run: contagem,
     proximaEsperaMs: proximaEspera(tarefa.spacing_seconds, tarefa.spacing_jitter_pct),
     ...(restricao
       ? { bloqueado: true, error: 'O WhatsApp restringiu os envios deste número. A execução foi interrompida.' }
