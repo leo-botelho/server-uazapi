@@ -3,11 +3,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getInstanceClient, requireAuth } from '@/lib/api-helpers'
 import { createServiceClient } from '@/lib/supabase/server'
 import { avaliarEnvioAoGrupo } from '@/lib/groups/dispatch'
+import { enviarPedido } from '@/lib/groups/executar'
 import { lerErroDaUazapi } from '@/lib/groups/errors'
 import { proximaEspera } from '@/lib/groups/limits'
-import { montarPedidoDeEnvio, validarConteudo, type PedidoDeEnvio } from '@/lib/groups/payloads'
+import { montarPedidoDeEnvio, validarConteudo } from '@/lib/groups/payloads'
 import { reservarInstante } from '@/lib/groups/runs'
-import type { UazapiClient } from '@/lib/uazapi/client'
 import type { Json } from '@/types/database'
 
 /**
@@ -21,14 +21,6 @@ import type { Json } from '@/types/database'
  * navegador precisa continuar para o grupo seguinte, e uma falha num grupo não
  * pode derrubar o resto da execução. Só as recusas de regra voltam com 4xx.
  */
-
-async function enviar(client: UazapiClient, token: string, pedido: PedidoDeEnvio) {
-  switch (pedido.via) {
-    case 'text':  return client.send.text(token, pedido.corpo)
-    case 'media': return client.send.media(token, pedido.corpo)
-    case 'menu':  return client.send.menu(token, pedido.corpo)
-  }
-}
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const { error: authError } = await requireAuth()
@@ -140,14 +132,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   let resposta: Json = {}
 
   try {
-    const r = await enviar(resolvida.client, resolvida.uazapiToken, pedido)
+    const r = await enviarPedido(resolvida.client, resolvida.uazapiToken, pedido)
     messageId = r.messageid ?? r.id
     resposta = { messageid: messageId ?? null }
   } catch (err) {
     const e = lerErroDaUazapi(err)
     status = 'failed'
     restricao = e.restricaoDoWhatsapp
-    resposta = { status: e.status, corpo: e.corpo.slice(0, 500) }
+    resposta = { status: e.status, corpo: e.corpo.slice(0, 500), ...(e.timeout ? { incerto: true } : {}) }
 
     mensagemDeErro = e.timeout
       // Sem resposta não é o mesmo que "não enviou": a mensagem pode ter saído.

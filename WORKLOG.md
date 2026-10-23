@@ -5,6 +5,111 @@ Registrar aqui toda implementação, fix e decisão técnica relevante ao final 
 
 ---
 
+## 2026-10-24 — Modulo de grupos, fase 3: agendador
+
+Agenda envio de mensagem (texto, midia, botoes) e alteracao de nome, descricao e foto para uma
+data/hora. Roda sozinho, com a aba fechada. Cobre o pedido de "agendar cada tarefa", "rate limit
+entre acoes" e "multi-tarefa" (varias tarefas coexistem; varias DATAS no mesmo passo ja sao aceitas
+pela API e pelo banco — a tela da fase 3 usa uma; a fase 4 abre a tela de varias).
+
+### Migration 016 (aplicar a mao no SQL Editor — idempotente, com rollback no cabecalho)
+
+Nao e opcional para agendar: a rota `POST /api/groups/tasks` RECUSA (503) enquanto a 016 nao
+existir, e a pagina de agendamentos mostra o aviso. Motivo: agendar sem ela criaria tarefas que
+nunca rodam, sem aviso nenhum (mesmo tipo de falha silenciosa da migration 009). O envio
+imediato continua funcionando so com a 015.
+
+O que a 016 resolve — todos sao modos de falha que so aparecem sem ninguem olhando:
+1. **Cadencia por NUMERO, nao por ocorrencia** (`group_instance_pace` +
+   `reserve_group_instance_slot`). Duas tarefas na mesma hora na mesma instancia dobrariam o
+   ritmo real sem nenhuma violar a propria regra; um atraso do cron geraria rajada. Reserva
+   atomica numa instrucao so.
+2. **Nada de reenvio as cegas.** A 015 devolvia ao lease um item preso e o reenviaria — se a
+   passada morreu DEPOIS de chamar a API e ANTES de gravar, isso duplicaria a mensagem num
+   grupo. `begin_group_item_send` grava `executed_at` ANTES de enviar; o lease vencido de um
+   item com `executed_at` vira FALHA "pode ter sido entregue" (`response.incerto = true`), nunca
+   reenvio. Item so reivindicado e nao enviado volta a fila normalmente.
+3. **Horario perdido nao dispara depois.** Ocorrencia > 60 min atrasada vira `failed` com
+   motivo; item > 2 h atrasado e descartado. Uma promocao de ontem chegando hoje e pior que nao
+   chegar. Tarefa pausada nao perde o horario enquanto pausada.
+4. **Convivencia com o envio pelo navegador.** O agendador nao abre ocorrencia numa instancia
+   com envio do navegador ativo, e `dispatch/start` recusa (409) se houver ocorrencia agendada
+   em andamento. As tarefas agendadas ficam `scheduled` enquanto trabalham (nunca `running`),
+   de proposito: a limpeza de "execucao abandonada" do `start` so olha tarefas `running` e
+   cancelaria uma campanha agendada com espacamento longo.
+5. Funcoes atomicas: pausar/retomar (retomar REESPACA os pendentes a partir de agora, senao tudo
+   que venceu na pausa sairia em rajada), cancelar, repetir falhas, bloquear instancia (463),
+   fechamento da tarefa quando todas as ocorrencias terminam.
+
+`claim_group_task_items` foi RECRIADA (drop + create) para devolver `instance_status`: evita uma
+chamada a uazapiGO so para descobrir que o numero esta desconectado (o monitor ja mantem isso).
+
+### A passada (`POST /api/groups/scheduler/tick`, secret `GROUPS_RUNNER_SECRET`)
+
+Plano Free: ate **5 itens por passada** (~4 idas externas cada + o claim ≈ 25 de 50) e orcamento
+de 45 s de sono. Por item, em ordem: portoes de admin/envio reconferidos na hora (entre agendar e
+executar podem ter passado dias) → espera o horario previsto → reserva o instante DA INSTANCIA →
+portao `begin_group_item_send` (pausado/cancelado enquanto dormia = nao envia) → executa →
+grava. Erro 463 do WhatsApp: bloqueia todas as tarefas da instancia, devolve o resto a fila e
+encerra a passada (insistir transforma restricao em banimento). Retomar tarefa bloqueada
+consulta o pre-voo antes. Timeout vira falha "incerta" (nao entra no "repetir falhas" por padrao).
+Responde `etapasMs` como o monitor, para diagnosticar CPU sem acesso ao banco.
+
+### Worker `workers/groups-runner` (cron a cada minuto) — decisao importante
+
+Ele **consulta o banco (PostgREST, 1 request leve) antes de acordar o app**, e so chama o tick
+se houver ocorrencia aberta/em andamento/com horario nos proximos 90 s em tarefa ativa. Acordar o
+Next.js inteiro 1.440x/dia para descobrir que nao ha nada e a forma de reabrir o problema de CPU
+do monitor. Se a consulta falhar, NAO chama o app as cegas. Custo: o worker guarda
+`SUPABASE_SERVICE_ROLE_KEY` (mesma conta Cloudflare, ja existe como secret do app). Separado do
+monitor de proposito (dominio de falha proprio). `GET <worker>?force=1` chama o tick direto.
+
+### Deploy
+
+`deploy.yml` — passo NOVO, por ultimo (depois do monitor). Se o secret `GROUPS_RUNNER_SECRET`
+nao existir no GitHub, so emite `::warning::` e segue: o painel funciona, o agendamento fica
+desligado e o tick responde 503. **Acao do usuario:** criar o secret no GitHub (qualquer valor
+aleatorio longo) e aplicar a 016; depois disparar o deploy (push ou "Run workflow").
+
+### Interface
+
+- Tela de envio: botoes "Enviar agora" / "Agendar". Agendar acrescenta: o que fazer (mensagem /
+  trocar nome / descricao / foto), nome do agendamento e data+hora (Brasilia). Mesmas travas do
+  envio (teto de marcar-todos, espacamento minimo, confirmacao digitada acima de 3 grupos com
+  marcar-todos ou ao alterar > 1 grupo). Alteracao so entra em grupo onde o numero e admin.
+  Marcar-todos e desligado de fato quando a acao nao e mensagem.
+- `/groups/[instanceId]/agenda`: tarefas com status, ocorrencias, progresso, detalhe por grupo,
+  pausar / retomar / cancelar (com confirmacao) e "Repetir as falhas". Pre-voo ao agendar so AVISA
+  (agendar com o numero caido hoje e legitimo); quem bloqueia de verdade e o agendador.
+- Refactors: `avaliarAlvosEEspacamento` (travas de alvo/ritmo compartilhadas pelas duas portas,
+  para nao divergirem), `lib/groups/executar.ts` (envio e foto compartilhados com as rotas).
+
+### Verificado (automatico)
+
+- Migration 016 no PGlite: **51 checagens** (idempotencia, reserva atomica, claim, portao de
+  envio, lease sem reenvio, release, retomar reespacando, repetir falhas, cancelar com item em
+  voo, horario perdido, convivencia com o navegador, bloqueio 463, fechamento, permissoes).
+- Regras puras (datas, passos, agendamento, decisoes do tick, esperas): **71 checagens**.
+- Regressao do envio imediato apos o refactor: 83/83. `tsc` limpo; `eslint` limpo nos arquivos
+  novos (os 7 erros restantes sao de arquivos pre-existentes que nao toquei).
+- Tela no navegador com dados de mentira: modo agendar, travas (nao-admin, sem nome, sem data),
+  corpo enviado (14:30 Brasilia = 17:30Z), lista de agendamentos, detalhe, "incerto".
+
+### NAO verificado (precisa de um teste real)
+
+- **Tudo contra o Supabase e a uazapiGO reais**: o tick de ponta a ponta, o worker no Cloudflare
+  e a consulta PostgREST do worker (`group_tasks!inner`) nunca rodaram. Os testes cobrem o SQL e
+  a logica, nao a rede.
+- **CPU no plano Free.** 5 itens por passada e uma estimativa, nao medida. Ver "Workers metrics"
+  depois do primeiro agendamento; se passar de 10 ms, reduzir `MAX_ITENS_POR_PASSADA`.
+- Foto agendada (URL vs base64, V8) e botoes agendados.
+- Fora do escopo desta fase: varias datas na tela (fase 4), sequencias com offset, boas-vindas.
+
+### Numeracao
+Boas-vindas passam a ser a migration **017** e enquetes/deeplinks a **018** (a 016 foi usada aqui).
+
+---
+
 ## 2026-10-24 — Modulo de grupos, fase 2: gestao de um grupo
 
 Primeiro envio real (fase 1) confirmado pelo usuario: funcionou num grupo de teste.

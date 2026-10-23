@@ -3,20 +3,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { OctagonAlert, RefreshCw, Send, TriangleAlert } from 'lucide-react'
+import { CalendarClock, OctagonAlert, RefreshCw, Send, TriangleAlert } from 'lucide-react'
 
 import { DispatchProgress } from './dispatch-progress'
 import { GroupList } from './group-list'
+import { CAMPOS_VAZIOS, ROTULO_DA_ACAO, ScheduleFields, type CamposDoAgendamento } from './schedule-fields'
 import { useDispatch } from './use-dispatch'
 import { BanRiskNotice } from '@/components/admin/groups/ban-risk-notice'
+import { chamarApi } from '@/components/admin/groups/chamar-api'
 import { ConfirmBulkDialog } from '@/components/admin/groups/confirm-bulk-dialog'
 import { MessageComposer } from '@/components/admin/groups/message-composer'
 import { SpacingField, formatarDuracao } from '@/components/admin/groups/spacing-field'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { formatarEmBrasilia } from '@/components/ui/datetime-field'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { exigeConfirmacaoDoAgendamento, validarDatas } from '@/lib/groups/agenda'
 import { exigeConfirmacaoDigitada } from '@/lib/groups/dispatch'
+import { validarDescricaoDoGrupo, validarNomeDoGrupo } from '@/lib/groups/gestao'
 import {
   ESPACAMENTO_PADRAO_S,
   JITTER_PADRAO_PCT,
@@ -51,13 +56,22 @@ export function GroupWorkspace({ instanceId, instanceName, grupos, precisaAtuali
   const [confirmando, setConfirmando] = useState(false)
   const [atualizando, setAtualizando] = useState(false)
   const [previo, setPrevio] = useState<ResultadoDoPrevoo | null>(null)
+  // Agendar: a mesma tela, com data e hora. Alterações (nome, descrição, foto) só existem aqui.
+  const [agendar, setAgendar] = useState(false)
+  const [campos, setCampos] = useState<CamposDoAgendamento>(CAMPOS_VAZIOS)
+  const [agendando, setAgendando] = useState(false)
+  const [erroDeAgendamento, setErroDeAgendamento] = useState<string | null>(null)
 
   const { estado, erroDeInicio, iniciar, pedirParada, reiniciar } = useDispatch()
   const enviando = estado.fase === 'enviando'
   const mostrandoResultado = estado.fase !== 'ocioso'
 
+  const eMensagem = !agendar || campos.acao === 'mensagem'
+  // Marcar todos só vale para mensagens: numa alteração fica desligado de fato.
+  const marcandoTodos = marcarTodos && eMensagem
+
   // O piso sobe sozinho quando liga marcar todos; o valor efetivo nunca fica abaixo dele.
-  const espacamentoEfetivo = Math.max(espacamento, espacamentoMinimo(marcarTodos))
+  const espacamentoEfetivo = Math.max(espacamento, espacamentoMinimo(marcandoTodos))
 
   // Seleção só vale para grupos que ainda existem na lista (ela pode ter sido atualizada).
   const jidsValidos = useMemo(() => new Set(grupos.map((g) => g.group_jid)), [grupos])
@@ -145,13 +159,45 @@ export function GroupWorkspace({ instanceId, instanceName, grupos, precisaAtuali
       return novo
     })
 
-  // ── Enviar ─────────────────────────────────────────────────────────────────
+  // ── Enviar / agendar ───────────────────────────────────────────────────────
   const problema = validarRascunho(rascunho)
-  const excedeTetoDeMarcarTodos = marcarTodos && alvos.length > MAX_GRUPOS_MARCANDO_TODOS
+  const excedeTetoDeMarcarTodos = marcandoTodos && alvos.length > MAX_GRUPOS_MARCANDO_TODOS
   const bloqueadoNoPrevoo = previo?.bloqueio != null && !previo.podeForcar
 
-  const motivoParaNaoEnviar =
-    alvos.length === 0 ? 'Selecione pelo menos um grupo.'
+  /** Motivo para o botão de agendar estar desligado, ou null quando está tudo certo. */
+  function motivoParaNaoAgendar(): string | null {
+    if (alvos.length === 0) return 'Selecione pelo menos um grupo.'
+    if (campos.acao === 'mensagem' && !problema.ok) return problema.erro
+    if (excedeTetoDeMarcarTodos) return `Marcando todos, o limite é de ${MAX_GRUPOS_MARCANDO_TODOS} grupos por execução.`
+
+    if (campos.acao === 'nome') {
+      const v = validarNomeDoGrupo(campos.novoNome)
+      if (!v.ok) return v.erro
+    }
+    if (campos.acao === 'descricao') {
+      const v = validarDescricaoDoGrupo(campos.novaDescricao)
+      if (!v.ok) return v.erro
+    }
+    if (campos.acao === 'foto' && !campos.fotoUrl) return 'Escolha a nova foto.'
+
+    if (campos.acao !== 'mensagem') {
+      const semAdmin = grupos.filter((g) => alvos.includes(g.group_jid) && !g.owner_is_admin)
+      if (semAdmin.length > 0) {
+        return `O número não é admin em ${semAdmin.length === 1 ? (semAdmin[0].name ?? 'um dos grupos') : `${semAdmin.length} dos grupos`}.`
+      }
+    }
+
+    if (!campos.nome.trim()) return 'Dê um nome ao agendamento.'
+
+    const datas = validarDatas(campos.quando ? [campos.quando] : [], alvos.length, espacamentoEfetivo)
+    if (!datas.ok) return datas.erro
+
+    return null
+  }
+
+  const motivoParaNaoEnviar = agendar
+    ? motivoParaNaoAgendar()
+    : alvos.length === 0 ? 'Selecione pelo menos um grupo.'
     : !problema.ok ? problema.erro
     : excedeTetoDeMarcarTodos
       ? `Marcando todos, o limite é de ${MAX_GRUPOS_MARCANDO_TODOS} grupos por envio.`
@@ -177,9 +223,50 @@ export function GroupWorkspace({ instanceId, instanceName, grupos, precisaAtuali
     return concluiu
   }, [rascunho, iniciar, instanceId, alvos, marcarTodos, espacamentoEfetivo, consultarPrevoo])
 
+  const agendarAgora = useCallback(async () => {
+    setAgendando(true)
+    setErroDeAgendamento(null)
+
+    let kind: string
+    let payload: Record<string, unknown>
+    switch (campos.acao) {
+      case 'nome':      kind = 'update_name';        payload = { name: campos.novoNome }; break
+      case 'descricao': kind = 'update_description'; payload = { description: campos.novaDescricao }; break
+      case 'foto':      kind = 'update_image';       payload = { image: campos.fotoUrl }; break
+      default: {
+        const envio = rascunhoParaEnvio(rascunho)
+        kind = envio.kind
+        payload = envio.payload as unknown as Record<string, unknown>
+      }
+    }
+
+    const r = await chamarApi<{ ocorrencias: number; aviso: string | null }>('/api/groups/tasks', {
+      instanceId,
+      name: campos.nome,
+      targetJids: alvos,
+      kind,
+      payload,
+      datas: campos.quando ? [campos.quando] : [],
+      marcarTodos: marcandoTodos,
+      espacamentoS: espacamentoEfetivo,
+      jitterPct: JITTER_PADRAO_PCT,
+    })
+
+    setAgendando(false)
+
+    if (!r.ok) {
+      setErroDeAgendamento(r.erro)
+      return
+    }
+
+    toast.success('Agendado.', r.dados.aviso ? { description: r.dados.aviso, duration: 10000 } : undefined)
+    router.push(`/groups/${instanceId}/agenda`)
+  }, [campos, rascunho, instanceId, alvos, marcandoTodos, espacamentoEfetivo, router])
+
   const aoConfirmar = () => {
     setConfirmando(false)
-    void executar(false)
+    if (agendar) void agendarAgora()
+    else void executar(false)
   }
 
   const duracao = formatarDuracao(Math.max(0, alvos.length - 1) * espacamentoEfetivo)
@@ -219,7 +306,20 @@ export function GroupWorkspace({ instanceId, instanceName, grupos, precisaAtuali
 
       {/* ── Mensagem ───────────────────────────────────────────────────── */}
       <section className="space-y-4" aria-label="Mensagem">
-        <h2 className="text-lg font-semibold">Mensagem</h2>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold">{agendar ? 'Agendar' : 'Mensagem'}</h2>
+          {!mostrandoResultado && (
+            <div className="flex gap-1.5" role="group" aria-label="Quando executar">
+              <Button size="sm" variant={agendar ? 'outline' : 'default'} aria-pressed={!agendar} onClick={() => setAgendar(false)}>
+                Enviar agora
+              </Button>
+              <Button size="sm" variant={agendar ? 'default' : 'outline'} aria-pressed={agendar} className="gap-1.5" onClick={() => setAgendar(true)}>
+                <CalendarClock className="size-3.5" aria-hidden />
+                Agendar
+              </Button>
+            </div>
+          )}
+        </div>
 
         {mostrandoResultado ? (
           <DispatchProgress
@@ -233,7 +333,7 @@ export function GroupWorkspace({ instanceId, instanceName, grupos, precisaAtuali
           <>
             {/* Pré-voo */}
             {previo?.bloqueio && (
-              <Alert variant="destructive">
+              <Alert variant={agendar ? 'default' : 'destructive'} className={agendar ? 'border-amber-500/40' : undefined}>
                 <OctagonAlert aria-hidden />
                 <AlertTitle>
                   {previo.bloqueio.tipo === 'desconectada' ? 'Instância desconectada'
@@ -243,6 +343,7 @@ export function GroupWorkspace({ instanceId, instanceName, grupos, precisaAtuali
                 <AlertDescription>
                   {previo.bloqueio.motivo}
                   {previo.bloqueio.ate && ` Até ${new Date(previo.bloqueio.ate).toLocaleString('pt-BR')}.`}
+                  {agendar && ' Dá para agendar mesmo assim: na hora, o painel confere de novo e não envia se o número continuar impedido.'}
                 </AlertDescription>
               </Alert>
             )}
@@ -254,14 +355,21 @@ export function GroupWorkspace({ instanceId, instanceName, grupos, precisaAtuali
               </Alert>
             ))}
 
-            <MessageComposer
-              instanceId={instanceId}
-              rascunho={rascunho}
-              aoMudar={setRascunho}
-              disabled={enviando}
-            />
+            {agendar && (
+              <ScheduleFields instanceId={instanceId} valor={campos} aoMudar={setCampos} disabled={agendando} />
+            )}
+
+            {eMensagem && (
+              <MessageComposer
+                instanceId={instanceId}
+                rascunho={rascunho}
+                aoMudar={setRascunho}
+                disabled={enviando || agendando}
+              />
+            )}
 
             <div className="space-y-4 rounded-lg border border-border p-4">
+              {eMensagem && (
               <div className="flex items-start justify-between gap-4">
                 <div className="space-y-0.5">
                   <Label htmlFor="marcar-todos">Marcar todos (@todos)</Label>
@@ -272,18 +380,27 @@ export function GroupWorkspace({ instanceId, instanceName, grupos, precisaAtuali
                 </div>
                 <Switch id="marcar-todos" checked={marcarTodos} onCheckedChange={setMarcarTodos} />
               </div>
+              )}
 
               <SpacingField
                 value={espacamento}
                 onChange={setEspacamento}
-                marcarTodos={marcarTodos}
+                marcarTodos={marcandoTodos}
                 quantidadeDeGrupos={alvos.length}
               />
             </div>
 
-            <BanRiskNotice marcarTodos={marcarTodos} />
+            {eMensagem && <BanRiskNotice marcarTodos={marcandoTodos} />}
 
-            {erroDeInicio && (
+            {agendar && erroDeAgendamento && (
+              <Alert variant="destructive">
+                <OctagonAlert aria-hidden />
+                <AlertTitle>Não foi possível agendar</AlertTitle>
+                <AlertDescription>{erroDeAgendamento}</AlertDescription>
+              </Alert>
+            )}
+
+            {!agendar && erroDeInicio && (
               <Alert variant="destructive">
                 <OctagonAlert aria-hidden />
                 <AlertTitle>Não foi possível iniciar o envio</AlertTitle>
@@ -306,11 +423,11 @@ export function GroupWorkspace({ instanceId, instanceName, grupos, precisaAtuali
               <Button
                 className="w-full gap-2"
                 size="lg"
-                disabled={motivoParaNaoEnviar !== null}
+                disabled={motivoParaNaoEnviar !== null || agendando}
                 onClick={() => setConfirmando(true)}
               >
-                <Send className="size-4" aria-hidden />
-                Enviar para {alvos.length} {alvos.length === 1 ? 'grupo' : 'grupos'}
+                {agendar ? <CalendarClock className="size-4" aria-hidden /> : <Send className="size-4" aria-hidden />}
+                {agendar ? (agendando ? 'Agendando…' : 'Agendar para') : 'Enviar para'} {alvos.length} {alvos.length === 1 ? 'grupo' : 'grupos'}
               </Button>
               {motivoParaNaoEnviar && alvos.length > 0 && (
                 <p className="text-center text-xs text-muted-foreground">{motivoParaNaoEnviar}</p>
@@ -323,16 +440,29 @@ export function GroupWorkspace({ instanceId, instanceName, grupos, precisaAtuali
       <ConfirmBulkDialog
         aberto={confirmando}
         aoMudar={setConfirmando}
-        titulo={`Enviar para ${alvos.length} ${alvos.length === 1 ? 'grupo' : 'grupos'}?`}
-        descricao={`“${resumoDoRascunho(rascunho)}” — a partir de ${instanceName}.`}
+        titulo={`${agendar ? 'Agendar para' : 'Enviar para'} ${alvos.length} ${alvos.length === 1 ? 'grupo' : 'grupos'}?`}
+        descricao={agendar
+          ? `${ROTULO_DA_ACAO[campos.acao]} em ${formatarEmBrasilia(campos.quando)} (Brasília), a partir de ${instanceName}.`
+          : `“${resumoDoRascunho(rascunho)}” — a partir de ${instanceName}.`}
         grupos={alvos.map((jid) => nomes.get(jid) ?? jid)}
-        exigirDigitar={exigeConfirmacaoDigitada(marcarTodos, alvos.length)}
+        exigirDigitar={agendar
+          ? exigeConfirmacaoDoAgendamento(campos.acao === 'mensagem' ? 'send_text' : 'update_name', marcandoTodos, alvos.length)
+          : exigeConfirmacaoDigitada(marcarTodos, alvos.length)}
+        textoDoBotao={agendar ? 'Agendar' : 'Enviar'}
         aoConfirmar={aoConfirmar}
       >
         <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
           <li>Intervalo de {espacamentoEfetivo} s entre grupos (com pequena variação).</li>
-          {alvos.length > 1 && <li>Duração estimada: cerca de {duracao}. Mantenha esta aba aberta.</li>}
-          {marcarTodos && (
+          {alvos.length > 1 && (
+            <li>
+              Duração estimada: cerca de {duracao}.{' '}
+              {agendar ? 'Pode fechar esta aba: o painel executa sozinho.' : 'Mantenha esta aba aberta.'}
+            </li>
+          )}
+          {agendar && campos.acao !== 'mensagem' && (
+            <li className="text-amber-400">Vale o que está digitado agora, mesmo que o grupo mude até lá.</li>
+          )}
+          {marcandoTodos && (
             <li className="text-amber-400">
               Todos os participantes de cada grupo serão notificados.
             </li>

@@ -754,6 +754,14 @@ export type Database = {
         }
         Relationships: []
       }
+
+      /** Instante do último envio de cada instância (migration 016): a cadência é do NÚMERO. */
+      group_instance_pace: {
+        Row: { instance_id: string; last_action_at: string }
+        Insert: { instance_id: string; last_action_at: string }
+        Update: { last_action_at?: string }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -831,7 +839,42 @@ export type Database = {
           owner_is_admin: boolean
           owner_can_send: boolean
           group_name: string | null
+          /** Estado da instância (migration 016): evita chamar a uazapiGO para descobrir que caiu. */
+          instance_status: string
         }[]
+      }
+      /**
+       * Cadência por NÚMERO (migration 016). Devolve 0 quando reservou o instante
+       * (pode enviar agora) ou quantos ms faltam para o próximo envio ser permitido.
+       */
+      reserve_group_instance_slot: {
+        Args: { p_instance: string; p_min_ms: number }
+        Returns: number
+      }
+      /**
+       * O portão imediatamente antes de enviar: confere que o item ainda é nosso e
+       * que a tarefa não foi parada, e grava `executed_at`. 'ok' | 'perdido' |
+       * 'parado' | 'cancelado'.
+       */
+      begin_group_item_send: {
+        Args: { p_id: number }
+        Returns: 'ok' | 'perdido' | 'parado' | 'cancelado'
+      }
+      /** Devolve à fila um item reivindicado que NÃO chegou a ser enviado. */
+      release_group_task_item: {
+        Args: { p_id: number; p_not_before: string }
+        Returns: undefined
+      }
+      /** Bloqueia as tarefas ativas da instância (restrição 463 é do número). */
+      block_group_instance_tasks: {
+        Args: { p_instance: string; p_reason: string }
+        Returns: number
+      }
+      cancel_group_task: { Args: { p_task: string }; Returns: number }
+      resume_group_task: { Args: { p_task: string }; Returns: number }
+      retry_failed_group_items: {
+        Args: { p_run: string; p_include_uncertain?: boolean }
+        Returns: number
       }
       open_due_group_runs: {
         Args: Record<string, never>

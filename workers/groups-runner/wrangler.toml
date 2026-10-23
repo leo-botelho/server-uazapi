@@ -1,0 +1,15 @@
+name = "server-uazapi-groups-runner"
+main = "index.js"
+compatibility_date = "2025-05-01"
+
+# A cada minuto. O worker so acorda o app quando ha trabalho (ver index.js), entao
+# a maior parte das execucoes termina em uma consulta leve ao banco.
+# Cron Triggers do Cloudflare sao pontuais — diferente do agendador do GitHub Actions.
+[triggers]
+crons = ["* * * * *"]
+
+[vars]
+GROUPS_TICK_URL = "https://server.smartskillshub.com.br/api/groups/scheduler/tick"
+
+[observability.logs]
+enabled = true

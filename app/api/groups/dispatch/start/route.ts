@@ -156,6 +156,37 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     await db.from('group_tasks').update({ status: 'canceled' }).in('id', idsAtivos)
   }
 
+  // O agendador (fase 3) mantém suas tarefas em `scheduled` enquanto trabalha, então
+  // elas não aparecem na checagem acima. O número também não pode receber um envio
+  // agendado e um direto ao mesmo tempo.
+  const { data: agendadas } = await db
+    .from('group_tasks')
+    .select('id')
+    .eq('instance_id', instanceId)
+    .eq('status', 'scheduled')
+
+  if ((agendadas ?? []).length > 0) {
+    const { data: emAndamento } = await db
+      .from('group_task_runs')
+      .select('id')
+      .in('task_id', (agendadas ?? []).map((t) => t.id))
+      .in('status', ['open', 'running'])
+      .limit(1)
+
+    if ((emAndamento ?? []).length > 0) {
+      return NextResponse.json(
+        {
+          error:
+            'Há um envio agendado em andamento neste número. Espere ele terminar ou pause o agendamento — ' +
+            'os dois ao mesmo tempo dobrariam a cadência real de mensagens.',
+          execucaoEmAndamento: true,
+          agendamentoEmAndamento: true,
+        },
+        { status: 409 }
+      )
+    }
+  }
+
   // ── Grava a campanha, o passo e a ocorrência ───────────────────────────────
   const nome =
     typeof corpo.name === 'string' && corpo.name.trim() ? corpo.name.trim().slice(0, 120) : nomePadrao()

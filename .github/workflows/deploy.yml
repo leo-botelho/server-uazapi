@@ -67,3 +67,26 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      # Agendador do modulo de grupos. Fica por ULTIMO, depois do monitor: uma
+      # falha aqui nunca deixa o monitor sem deploy. Se o secret GROUPS_RUNNER_SECRET
+      # nao existir no GitHub, o passo so avisa e segue — o resto do painel funciona,
+      # so o agendamento fica desligado (a rota do tick responde 503 sem o secret).
+      - name: Deploy do agendador de grupos
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          GROUPS_RUNNER_SECRET: ${{ secrets.GROUPS_RUNNER_SECRET }}
+          SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [ -z "$GROUPS_RUNNER_SECRET" ]; then
+            echo "::warning::GROUPS_RUNNER_SECRET nao esta definido nos secrets do GitHub: o agendador de grupos NAO foi instalado."
+            exit 0
+          fi
+          # No app principal: protege POST /api/groups/scheduler/tick.
+          printf '%s' "$GROUPS_RUNNER_SECRET" | npx wrangler secret put GROUPS_RUNNER_SECRET
+          npx wrangler deploy --config workers/groups-runner/wrangler.toml
+          printf '%s' "$GROUPS_RUNNER_SECRET"      | npx wrangler secret put GROUPS_RUNNER_SECRET      --config workers/groups-runner/wrangler.toml
+          printf '%s' "$SUPABASE_URL"              | npx wrangler secret put SUPABASE_URL              --config workers/groups-runner/wrangler.toml
+          printf '%s' "$SUPABASE_SERVICE_ROLE_KEY" | npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY --config workers/groups-runner/wrangler.toml
