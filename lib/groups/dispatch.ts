@@ -83,7 +83,7 @@ export interface OpcoesDeAlvos {
   maxGrupos: number
   mensagemDeExcesso: string
   /** O que o número precisa poder fazer em cada grupo. */
-  exige: 'enviar' | 'admin'
+  exige: 'enviar' | 'admin' | 'ambos'
 }
 
 export interface AlvosAprovados {
@@ -156,7 +156,7 @@ export function avaliarAlvosEEspacamento(
     )
   }
 
-  if (opcoes.exige === 'enviar') {
+  if (opcoes.exige !== 'admin') {
     const semPermissao = alvos.filter((jid) => !grupos.get(jid)?.podeEnviar)
     if (semPermissao.length > 0) {
       const nomes = semPermissao.map((jid) => grupos.get(jid)?.nome ?? jid)
@@ -167,7 +167,9 @@ export function avaliarAlvosEEspacamento(
         { semPermissaoDeEnvio: semPermissao }
       )
     }
-  } else {
+  }
+
+  if (opcoes.exige !== 'enviar') {
     const semAdmin = alvos.filter((jid) => grupos.get(jid)?.ehAdmin !== true)
     if (semAdmin.length > 0) {
       const nomes = semAdmin.map((jid) => grupos.get(jid)?.nome ?? jid)

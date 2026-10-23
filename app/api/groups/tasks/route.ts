@@ -89,6 +89,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       kind: corpo.kind,
       payload: corpo.payload,
       datas: corpo.datas,
+      passos: corpo.passos,
       marcarTodos: corpo.marcarTodos,
       espacamentoS: corpo.espacamentoS,
       jitterPct: corpo.jitterPct,
@@ -112,7 +113,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     if (!existe) return NextResponse.json({ error: 'Instância não encontrada.' }, { status: 404 })
   }
 
-  // ── Grava a tarefa, o passo e uma ocorrência por data ──────────────────────
+  // ── Grava a tarefa, os passos e uma ocorrência por data ────────────────────
   const { data: tarefa, error: erroDaTarefa } = await db
     .from('group_tasks')
     .insert({
@@ -122,7 +123,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       spacing_seconds: aprovado.espacamentoS,
       spacing_jitter_pct: aprovado.jitterPct,
       mention_all: aprovado.marcarTodos,
-      starts_at: aprovado.datas[0],
+      starts_at: aprovado.inicio,
       status: 'scheduled',
       wa_limits_snapshot: (previo?.limites ?? null) as Json | null,
       created_by: user.id,
@@ -135,49 +136,59 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'Não foi possível criar o agendamento.' }, { status: 500 })
   }
 
-  const { data: passo, error: erroDoPasso } = await db
-    .from('group_task_steps')
-    .insert({
-      task_id: tarefa.id,
-      step_order: 0,
-      kind: aprovado.conteudo.kind,
-      payload: aprovado.conteudo.payload as unknown as Json,
-      schedule_mode: 'absolute',
-      absolute_ats: aprovado.datas,
-    })
-    .select('id')
-    .single()
-
-  if (erroDoPasso || !passo) {
-    console.error('[groups/tasks] falha ao criar o passo:', erroDoPasso?.message)
+  // Tudo que falhar daqui para a frente apaga a tarefa: ela leva passos e
+  // ocorrências junto (ON DELETE CASCADE). Agendamento pela metade seria pior
+  // que nenhum — um passo de uma sequência sumiria sem aviso.
+  const desfazer = async (motivo: string, mensagem: string) => {
+    console.error(`[groups/tasks] ${motivo}`)
     await db.from('group_tasks').delete().eq('id', tarefa.id)
-    return NextResponse.json({ error: 'Não foi possível criar o agendamento.' }, { status: 500 })
+    return NextResponse.json({ error: mensagem }, { status: 500 })
   }
+
+  const { data: passos, error: erroDosPassos } = await db
+    .from('group_task_steps')
+    .insert(
+      aprovado.passos.map((p, i) => ({
+        task_id: tarefa.id,
+        step_order: i,
+        kind: p.conteudo.kind,
+        payload: p.conteudo.payload as unknown as Json,
+        schedule_mode: p.modo,
+        // Passo com atraso relativo não guarda datas: a data dele nasce da âncora.
+        ...(p.modo === 'absolute' ? { absolute_ats: p.datas } : { offset_minutes: p.offsetMinutos }),
+      }))
+    )
+    .select('id, step_order')
+
+  if (erroDosPassos || !passos || passos.length !== aprovado.passos.length) {
+    return desfazer(`falha ao criar os passos: ${erroDosPassos?.message ?? 'contagem diferente'}`, 'Não foi possível criar o agendamento.')
+  }
+
+  const idDoPasso = new Map(passos.map((p) => [p.step_order, p.id]))
 
   // `resolved_jids` fica vazio de propósito: os alvos são fotografados quando a
   // ocorrência ABRE, e até lá dá para ajustar a tarefa sem reescrever nada.
-  const { error: erroDasOcorrencias } = await db.from('group_task_runs').insert(
-    aprovado.datas.map((quando) => ({
+  const ocorrencias = aprovado.passos.flatMap((p, i) =>
+    p.datas.map((quando) => ({
       task_id: tarefa.id,
-      step_id: passo.id,
+      step_id: idDoPasso.get(i)!,
       run_at: quando,
       status: 'scheduled' as const,
       total: aprovado.targetJids.length,
     }))
   )
 
+  const { error: erroDasOcorrencias } = await db.from('group_task_runs').insert(ocorrencias)
   if (erroDasOcorrencias) {
-    console.error('[groups/tasks] falha ao criar as ocorrências:', erroDasOcorrencias.message)
-    // A tarefa leva passo e ocorrências junto (ON DELETE CASCADE).
-    await db.from('group_tasks').delete().eq('id', tarefa.id)
-    return NextResponse.json({ error: 'Não foi possível criar o agendamento.' }, { status: 500 })
+    return desfazer(`falha ao criar as ocorrências: ${erroDasOcorrencias.message}`, 'Não foi possível criar o agendamento.')
   }
 
   return NextResponse.json(
     {
       taskId: tarefa.id,
-      ocorrencias: aprovado.datas.length,
-      datas: aprovado.datas,
+      passos: aprovado.passos.length,
+      ocorrencias: ocorrencias.length,
+      inicio: aprovado.inicio,
       avisos: previo?.avisos ?? [],
       // O número está fora do ar ou restrito agora: o agendamento vale, mas vale dizer.
       aviso: previo?.bloqueio ? previo.bloqueio.motivo : null,
@@ -214,9 +225,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   if (ids.length === 0) return NextResponse.json({ tarefas: [] })
 
   const [{ data: passos }, { data: ocorrencias }] = await Promise.all([
-    db.from('group_task_steps').select('task_id, kind, payload').in('task_id', ids),
+    db.from('group_task_steps').select('id, task_id, step_order, kind, payload, offset_minutes').in('task_id', ids).order('step_order', { ascending: true }),
     db.from('group_task_runs')
-      .select('id, task_id, run_at, status, total, succeeded, failed, blocked_reason')
+      .select('id, task_id, step_id, run_at, status, total, succeeded, failed, blocked_reason')
       .in('task_id', ids)
       .order('run_at', { ascending: true })
       .limit(500),
@@ -232,7 +243,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       espacamentoS: t.spacing_seconds,
       marcarTodos: t.mention_all,
       criadaEm: t.created_at,
-      passo: (passos ?? []).find((p) => p.task_id === t.id) ?? null,
+      passos: (passos ?? []).filter((p) => p.task_id === t.id),
       ocorrencias: (ocorrencias ?? []).filter((o) => o.task_id === t.id),
     })),
   })

@@ -16,12 +16,21 @@ import { Skeleton } from '@/components/ui/skeleton'
 
 interface Ocorrencia {
   id: string
+  step_id: string
   run_at: string
   status: string
   total: number
   succeeded: number
   failed: number
   blocked_reason: string | null
+}
+
+interface Passo {
+  id: string
+  step_order: number
+  kind: string
+  payload: Record<string, unknown>
+  offset_minutes: number | null
 }
 
 interface Tarefa {
@@ -32,7 +41,7 @@ interface Tarefa {
   grupos: number
   espacamentoS: number
   marcarTodos: boolean
-  passo: { kind: string; payload: Record<string, unknown> } | null
+  passos: Passo[]
   ocorrencias: Ocorrencia[]
 }
 
@@ -78,16 +87,27 @@ const corDoStatus = (s: string): 'default' | 'secondary' | 'destructive' | 'outl
   : s === 'scheduled' ? 'secondary'
   : 'outline'
 
-/** Resumo do que a tarefa faz, em uma linha. */
-function resumo(t: Tarefa): string {
-  const p = t.passo?.payload ?? {}
+/** Resumo do que um passo faz, em uma linha. */
+function resumo(p: Passo | undefined): string {
+  if (!p) return ''
+  const dados = p.payload ?? {}
   const texto = (v: unknown) => (typeof v === 'string' ? v : '')
-  switch (t.passo?.kind) {
-    case 'update_name': return `Novo nome: “${texto(p.name)}”`
-    case 'update_description': return texto(p.description) ? `Nova descrição: “${texto(p.description).slice(0, 80)}”` : 'Apagar a descrição'
-    case 'update_image': return texto(p.image) === 'remove' ? 'Remover a foto' : 'Trocar a foto do grupo'
-    default: return texto(p.text) ? `“${texto(p.text).slice(0, 90)}${texto(p.text).length > 90 ? '…' : ''}”` : (ROTULO_DO_TIPO[t.passo?.kind ?? ''] ?? '')
+  switch (p.kind) {
+    case 'update_name': return `Novo nome: “${texto(dados.name)}”`
+    case 'update_description': return texto(dados.description) ? `Nova descrição: “${texto(dados.description).slice(0, 80)}”` : 'Apagar a descrição'
+    case 'update_image': return texto(dados.image) === 'remove' ? 'Remover a foto' : 'Trocar a foto do grupo'
+    default: return texto(dados.text) ? `“${texto(dados.text).slice(0, 90)}${texto(dados.text).length > 90 ? '…' : ''}”` : (ROTULO_DO_TIPO[p.kind] ?? '')
   }
+}
+
+/** "2 dias depois do início", "3 h 30 min depois do início". */
+function atrasoPorExtenso(min: number): string {
+  if (min === 0) return 'no início'
+  const d = Math.floor(min / 1440)
+  const h = Math.floor((min % 1440) / 60)
+  const m = min % 60
+  const partes = [d && `${d} ${d === 1 ? 'dia' : 'dias'}`, h && `${h} h`, m && `${m} min`].filter(Boolean)
+  return `${partes.join(' ')} depois do início`
 }
 
 function Detalhes({ run, podeRepetir, aoRepetir }: { run: Ocorrencia; podeRepetir: boolean; aoRepetir: () => void }) {
@@ -229,10 +249,11 @@ export function AgendaList({ instanceId }: { instanceId: string }) {
                 <div className="min-w-0 space-y-1">
                   <CardTitle className="truncate">{t.nome}</CardTitle>
                   <p className="text-sm text-muted-foreground">
-                    {ROTULO_DO_TIPO[t.passo?.kind ?? ''] ?? 'Ação'} · {t.grupos} {t.grupos === 1 ? 'grupo' : 'grupos'} ·
-                    intervalo de {t.espacamentoS} s{t.marcarTodos && ' · marcando todos'}
+                    {t.passos.length > 1 ? `${t.passos.length} passos` : (ROTULO_DO_TIPO[t.passos[0]?.kind ?? ''] ?? 'Ação')} ·{' '}
+                    {t.grupos} {t.grupos === 1 ? 'grupo' : 'grupos'} · intervalo de {t.espacamentoS} s
+                    {t.marcarTodos && ' · marcando todos'}
                   </p>
-                  <p className="text-sm">{resumo(t)}</p>
+                  {t.passos.length === 1 && <p className="text-sm">{resumo(t.passos[0])}</p>}
                 </div>
                 <Badge variant={corDoStatus(t.status)}>{ROTULO_DA_TAREFA[t.status] ?? t.status}</Badge>
               </div>
@@ -269,6 +290,7 @@ export function AgendaList({ instanceId }: { instanceId: string }) {
               {t.ocorrencias.map((o) => {
                 const feitos = o.succeeded + o.failed
                 const expandida = aberta === o.id
+                const passo = t.passos.find((p) => p.id === o.step_id)
                 return (
                   <div key={o.id} className="rounded-lg border border-border">
                     <button
@@ -279,6 +301,12 @@ export function AgendaList({ instanceId }: { instanceId: string }) {
                     >
                       {expandida ? <ChevronDown className="size-4 shrink-0" aria-hidden /> : <ChevronRight className="size-4 shrink-0" aria-hidden />}
                       <span className="font-medium">{formatarEmBrasilia(o.run_at)}</span>
+                      {t.passos.length > 1 && passo && (
+                        <span className="min-w-0 truncate text-muted-foreground">
+                          Passo {passo.step_order + 1} · {resumo(passo)}
+                          {passo.offset_minutes !== null && ` (${atrasoPorExtenso(passo.offset_minutes)})`}
+                        </span>
+                      )}
                       <Badge variant={corDoStatus(o.status)}>{ROTULO_DA_OCORRENCIA[o.status] ?? o.status}</Badge>
                       <span className="ml-auto text-xs text-muted-foreground">
                         {o.total > 0 ? `${o.succeeded} ok${o.failed > 0 ? ` · ${o.failed} com problema` : ''} de ${o.total}` : ''}

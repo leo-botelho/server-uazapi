@@ -5,6 +5,58 @@ Registrar aqui toda implementação, fix e decisão técnica relevante ao final 
 
 ---
 
+## 2026-10-24 — Modulo de grupos, fase 4: varios passos, varias datas, sequencias
+
+Um agendamento agora tem N passos; cada passo tem a propria acao e o proprio quando. Cobre
+"alteracoes diferentes e mensagens diferentes em dias e horarios diferentes" e a sequencia
+("hoje, daqui a 2 dias, daqui a 5"). Sem migration nova: o modelo da 015 ja tinha
+`group_task_steps` com `absolute_ats` e `offset_minutes`.
+
+- **Varias datas num passo** (ate 30): "repetir em outra data".
+- **Varios passos** (ate 10, 60 execucoes no total): trocar o nome na segunda, mandar o aviso na quinta.
+- **Sequencia**: a partir do 2o passo, "Depois do inicio" (minutos/horas/dias). O 1o passo precisa
+  de data fixa — e ele que ancora. A tela mostra "Cai em ..." para cada atraso.
+- Cronograma ("O que vai acontecer") antes de confirmar, vindo do mesmo `avaliarAgendamento`
+  que a rota usa: a tela nao promete o que o servidor vai recusar. Substituiu a validacao propria
+  que a tela tinha na fase 3 (uma regra so, em vez de duas copiadas).
+
+### Decisoes
+
+- **Sobreposicao e conferida sobre o CONJUNTO** de execucoes, nao por passo. Passos diferentes
+  na mesma hora disputam o mesmo numero; a cadencia por instancia (016) impediria o ritmo de
+  dobrar, mas a tarefa correria atras do proprio rabo. Recusa com a duracao estimada. Atraso 0
+  junto da ancora cai aqui tambem.
+- **Marcar todos e da tarefa, mas so vale com ao menos uma mensagem**; mistura de mensagem e
+  alteracao exige admin E poder enviar em todos os grupos (`exige: 'ambos'`). So alteracoes nao
+  exigem poder enviar.
+- Erro de um passo aponta qual ("Passo 2: ..."); com um passo so, sem prefixo.
+- A rota apaga a tarefa inteira se qualquer passo/ocorrencia falhar ao gravar (ON DELETE CASCADE):
+  sequencia pela metade, com um passo sumido sem aviso, seria pior que nenhuma.
+- Formato antigo (`kind`/`payload`/`datas`, um passo) continua aceito pela rota.
+- `GET /api/groups/tasks` agora devolve `passos[]` e cada ocorrencia traz `step_id`; a lista mostra
+  "Passo N · ... (2 dias depois do inicio)".
+
+### Verificado (automatico)
+
+- Regras de agendamento: 71 (fase 3, adaptadas) + **42 novas** (sequencia, mistura de acoes,
+  sobreposicao entre passos, limites de passos/execucoes, formato antigo, confirmacao digitada).
+- Migration 016 no PGlite: **58** (7 novas: tarefa com 2 passos, claim devolve o tipo do passo da
+  ocorrencia, tarefa so fecha quando TODAS as ocorrencias de TODOS os passos terminam, cancelar
+  leva todos os passos, banco recusa passo relativo sem `offset_minutes`).
+- Regressao do envio imediato: 83/83. `tsc` e `eslint` limpos.
+- Tela no navegador com dados de mentira: passo 2 como "depois do inicio" resolve para +2 dias,
+  confirmacao digitada trava com alteracao em 2 grupos, corpo enviado conferido (10:00 Brasilia =
+  13:00Z, `offsetMinutos: 2880`), lista com 3 passos.
+
+### NAO verificado
+
+- Tudo que a fase 3 ja listava como nao verificado continua valendo (nada rodou contra
+  Supabase/uazapiGO/Cloudflare reais). Esta fase so acrescenta regras e tela em cima dela.
+- Editar um agendamento depois de criado: nao existe (cancela e cria de novo). Os alvos so sao
+  fotografados quando cada ocorrencia abre, entao a base para editar existe, mas a tela nao.
+
+---
+
 ## 2026-10-24 — Modulo de grupos, fase 3: agendador
 
 Agenda envio de mensagem (texto, midia, botoes) e alteracao de nome, descricao e foto para uma

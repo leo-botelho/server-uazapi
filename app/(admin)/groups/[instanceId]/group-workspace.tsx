@@ -7,7 +7,7 @@ import { CalendarClock, OctagonAlert, RefreshCw, Send, TriangleAlert } from 'luc
 
 import { DispatchProgress } from './dispatch-progress'
 import { GroupList } from './group-list'
-import { CAMPOS_VAZIOS, ROTULO_DA_ACAO, ScheduleFields, type CamposDoAgendamento } from './schedule-fields'
+import { ScheduleComposer, type ExecucaoPrevista } from './schedule-composer'
 import { useDispatch } from './use-dispatch'
 import { BanRiskNotice } from '@/components/admin/groups/ban-risk-notice'
 import { chamarApi } from '@/components/admin/groups/chamar-api'
@@ -19,9 +19,9 @@ import { Button } from '@/components/ui/button'
 import { formatarEmBrasilia } from '@/components/ui/datetime-field'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
-import { exigeConfirmacaoDoAgendamento, validarDatas } from '@/lib/groups/agenda'
+import { avaliarAgendamento, exigeConfirmacaoDoAgendamento } from '@/lib/groups/agenda'
+import { ehMensagem, kindDoPasso, motivoDoPasso, passoParaApi, passoVazio, type PassoDaTela } from '@/lib/groups/agenda-tela'
 import { exigeConfirmacaoDigitada } from '@/lib/groups/dispatch'
-import { validarDescricaoDoGrupo, validarNomeDoGrupo } from '@/lib/groups/gestao'
 import {
   ESPACAMENTO_PADRAO_S,
   JITTER_PADRAO_PCT,
@@ -58,7 +58,8 @@ export function GroupWorkspace({ instanceId, instanceName, grupos, precisaAtuali
   const [previo, setPrevio] = useState<ResultadoDoPrevoo | null>(null)
   // Agendar: a mesma tela, com data e hora. Alterações (nome, descrição, foto) só existem aqui.
   const [agendar, setAgendar] = useState(false)
-  const [campos, setCampos] = useState<CamposDoAgendamento>(CAMPOS_VAZIOS)
+  const [nomeAg, setNomeAg] = useState('')
+  const [passos, setPassos] = useState<PassoDaTela[]>(() => [passoVazio()])
   const [agendando, setAgendando] = useState(false)
   const [erroDeAgendamento, setErroDeAgendamento] = useState<string | null>(null)
 
@@ -66,7 +67,8 @@ export function GroupWorkspace({ instanceId, instanceName, grupos, precisaAtuali
   const enviando = estado.fase === 'enviando'
   const mostrandoResultado = estado.fase !== 'ocioso'
 
-  const eMensagem = !agendar || campos.acao === 'mensagem'
+  // Ao agendar, vale se ALGUM passo é mensagem (marcar todos é da tarefa inteira).
+  const eMensagem = !agendar || passos.some(ehMensagem)
   // Marcar todos só vale para mensagens: numa alteração fica desligado de fato.
   const marcandoTodos = marcarTodos && eMensagem
 
@@ -164,39 +166,56 @@ export function GroupWorkspace({ instanceId, instanceName, grupos, precisaAtuali
   const excedeTetoDeMarcarTodos = marcandoTodos && alvos.length > MAX_GRUPOS_MARCANDO_TODOS
   const bloqueadoNoPrevoo = previo?.bloqueio != null && !previo.podeForcar
 
-  /** Motivo para o botão de agendar estar desligado, ou null quando está tudo certo. */
-  function motivoParaNaoAgendar(): string | null {
-    if (alvos.length === 0) return 'Selecione pelo menos um grupo.'
-    if (campos.acao === 'mensagem' && !problema.ok) return problema.erro
-    if (excedeTetoDeMarcarTodos) return `Marcando todos, o limite é de ${MAX_GRUPOS_MARCANDO_TODOS} grupos por execução.`
+  // Os grupos como a rota os enxerga: o que o cache sabe de permissões.
+  const conhecidos = useMemo(
+    () => new Map(grupos.map((g) => [g.group_jid, { nome: g.name, podeEnviar: g.owner_can_send, ehAdmin: g.owner_is_admin }])),
+    [grupos]
+  )
 
-    if (campos.acao === 'nome') {
-      const v = validarNomeDoGrupo(campos.novoNome)
-      if (!v.ok) return v.erro
-    }
-    if (campos.acao === 'descricao') {
-      const v = validarDescricaoDoGrupo(campos.novaDescricao)
-      if (!v.ok) return v.erro
-    }
-    if (campos.acao === 'foto' && !campos.fotoUrl) return 'Escolha a nova foto.'
+  /**
+   * O pedido de agendamento passa por `avaliarAgendamento` — a MESMA função que a
+   * rota usa. Assim a tela nunca promete o que o servidor vai recusar, e as regras
+   * (admin, teto, datas, sobreposição, sequência) ficam num lugar só.
+   */
+  const avaliacao = ((): { motivo: string | null; cronograma: ExecucaoPrevista[] } => {
+    if (!agendar) return { motivo: null, cronograma: [] }
+    if (alvos.length === 0) return { motivo: 'Selecione pelo menos um grupo.', cronograma: [] }
 
-    if (campos.acao !== 'mensagem') {
-      const semAdmin = grupos.filter((g) => alvos.includes(g.group_jid) && !g.owner_is_admin)
-      if (semAdmin.length > 0) {
-        return `O número não é admin em ${semAdmin.length === 1 ? (semAdmin[0].name ?? 'um dos grupos') : `${semAdmin.length} dos grupos`}.`
+    for (const [i, p] of passos.entries()) {
+      const m = motivoDoPasso(p, i)
+      if (m) {
+        const texto = m.charAt(0).toUpperCase() + m.slice(1)
+        return { motivo: passos.length > 1 ? `Passo ${i + 1}: ${m}` : texto, cronograma: [] }
       }
     }
 
-    if (!campos.nome.trim()) return 'Dê um nome ao agendamento.'
+    if (!nomeAg.trim()) return { motivo: 'Dê um nome ao agendamento.', cronograma: [] }
 
-    const datas = validarDatas(campos.quando ? [campos.quando] : [], alvos.length, espacamentoEfetivo)
-    if (!datas.ok) return datas.erro
+    // O prefixo só serve para a conferência da foto: o servidor confere a URL de verdade.
+    const v = avaliarAgendamento(
+      {
+        name: nomeAg,
+        targetJids: alvos,
+        passos: passos.map(passoParaApi),
+        marcarTodos: marcandoTodos,
+        espacamentoS: espacamentoEfetivo,
+        jitterPct: JITTER_PADRAO_PCT,
+      },
+      conhecidos,
+      'http'
+    )
+    if (!v.ok) return { motivo: v.erro, cronograma: [] }
 
-    return null
-  }
+    return {
+      motivo: null,
+      cronograma: v.aprovado.passos
+        .flatMap((p, i) => p.datas.map((quando) => ({ quando, passo: i + 1 })))
+        .sort((a, b) => Date.parse(a.quando) - Date.parse(b.quando)),
+    }
+  })()
 
   const motivoParaNaoEnviar = agendar
-    ? motivoParaNaoAgendar()
+    ? avaliacao.motivo
     : alvos.length === 0 ? 'Selecione pelo menos um grupo.'
     : !problema.ok ? problema.erro
     : excedeTetoDeMarcarTodos
@@ -227,26 +246,11 @@ export function GroupWorkspace({ instanceId, instanceName, grupos, precisaAtuali
     setAgendando(true)
     setErroDeAgendamento(null)
 
-    let kind: string
-    let payload: Record<string, unknown>
-    switch (campos.acao) {
-      case 'nome':      kind = 'update_name';        payload = { name: campos.novoNome }; break
-      case 'descricao': kind = 'update_description'; payload = { description: campos.novaDescricao }; break
-      case 'foto':      kind = 'update_image';       payload = { image: campos.fotoUrl }; break
-      default: {
-        const envio = rascunhoParaEnvio(rascunho)
-        kind = envio.kind
-        payload = envio.payload as unknown as Record<string, unknown>
-      }
-    }
-
     const r = await chamarApi<{ ocorrencias: number; aviso: string | null }>('/api/groups/tasks', {
       instanceId,
-      name: campos.nome,
+      name: nomeAg,
       targetJids: alvos,
-      kind,
-      payload,
-      datas: campos.quando ? [campos.quando] : [],
+      passos: passos.map(passoParaApi),
       marcarTodos: marcandoTodos,
       espacamentoS: espacamentoEfetivo,
       jitterPct: JITTER_PADRAO_PCT,
@@ -261,7 +265,7 @@ export function GroupWorkspace({ instanceId, instanceName, grupos, precisaAtuali
 
     toast.success('Agendado.', r.dados.aviso ? { description: r.dados.aviso, duration: 10000 } : undefined)
     router.push(`/groups/${instanceId}/agenda`)
-  }, [campos, rascunho, instanceId, alvos, marcandoTodos, espacamentoEfetivo, router])
+  }, [nomeAg, passos, instanceId, alvos, marcandoTodos, espacamentoEfetivo, router])
 
   const aoConfirmar = () => {
     setConfirmando(false)
@@ -355,16 +359,22 @@ export function GroupWorkspace({ instanceId, instanceName, grupos, precisaAtuali
               </Alert>
             ))}
 
-            {agendar && (
-              <ScheduleFields instanceId={instanceId} valor={campos} aoMudar={setCampos} disabled={agendando} />
-            )}
-
-            {eMensagem && (
+            {agendar ? (
+              <ScheduleComposer
+                instanceId={instanceId}
+                nome={nomeAg}
+                aoMudarNome={setNomeAg}
+                passos={passos}
+                aoMudarPassos={setPassos}
+                cronograma={avaliacao.cronograma}
+                disabled={agendando}
+              />
+            ) : (
               <MessageComposer
                 instanceId={instanceId}
                 rascunho={rascunho}
                 aoMudar={setRascunho}
-                disabled={enviando || agendando}
+                disabled={enviando}
               />
             )}
 
@@ -442,11 +452,12 @@ export function GroupWorkspace({ instanceId, instanceName, grupos, precisaAtuali
         aoMudar={setConfirmando}
         titulo={`${agendar ? 'Agendar para' : 'Enviar para'} ${alvos.length} ${alvos.length === 1 ? 'grupo' : 'grupos'}?`}
         descricao={agendar
-          ? `${ROTULO_DA_ACAO[campos.acao]} em ${formatarEmBrasilia(campos.quando)} (Brasília), a partir de ${instanceName}.`
+          ? `${passos.length} ${passos.length === 1 ? 'passo' : 'passos'} · ${avaliacao.cronograma.length} ${avaliacao.cronograma.length === 1 ? 'execução' : 'execuções'}, ` +
+            `a partir de ${formatarEmBrasilia(avaliacao.cronograma[0]?.quando)} (Brasília) — ${instanceName}.`
           : `“${resumoDoRascunho(rascunho)}” — a partir de ${instanceName}.`}
         grupos={alvos.map((jid) => nomes.get(jid) ?? jid)}
         exigirDigitar={agendar
-          ? exigeConfirmacaoDoAgendamento(campos.acao === 'mensagem' ? 'send_text' : 'update_name', marcandoTodos, alvos.length)
+          ? exigeConfirmacaoDoAgendamento(passos.map(kindDoPasso), marcandoTodos, alvos.length)
           : exigeConfirmacaoDigitada(marcarTodos, alvos.length)}
         textoDoBotao={agendar ? 'Agendar' : 'Enviar'}
         aoConfirmar={aoConfirmar}
@@ -459,7 +470,7 @@ export function GroupWorkspace({ instanceId, instanceName, grupos, precisaAtuali
               {agendar ? 'Pode fechar esta aba: o painel executa sozinho.' : 'Mantenha esta aba aberta.'}
             </li>
           )}
-          {agendar && campos.acao !== 'mensagem' && (
+          {agendar && passos.some((p) => !ehMensagem(p)) && (
             <li className="text-amber-400">Vale o que está digitado agora, mesmo que o grupo mude até lá.</li>
           )}
           {marcandoTodos && (
