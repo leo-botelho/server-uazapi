@@ -4,9 +4,11 @@ import { useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { ExternalLink, Power, PowerOff } from 'lucide-react'
+import { ExternalLink, Power, PowerOff, Unplug } from 'lucide-react'
 
 import { InstanceStatusBadge } from './instance-status-badge'
+import { RemoveMissingInstance } from './remove-missing-instance'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Table,
@@ -114,6 +116,16 @@ export function InstanceTable({ instances }: InstanceTableProps) {
             </TableCell>
             <TableCell className="font-medium">
               {instance.name}
+              {instance.missing_since && (
+                <Badge
+                  variant="outline"
+                  className="ml-2 gap-1 border-amber-500/40 text-amber-400 align-middle"
+                  title={`Não aparece na listagem do uazapiGO desde ${formatDate(instance.missing_since)}`}
+                >
+                  <Unplug className="size-3" aria-hidden />
+                  sumiu do uazapiGO
+                </Badge>
+              )}
             </TableCell>
             <TableCell>
               {instance.phone_connected ?? '—'}
@@ -140,7 +152,15 @@ export function InstanceTable({ instances }: InstanceTableProps) {
                   Ver
                 </Button>
 
-                {instance.status === 'disconnected' ? (
+                {instance.missing_since ? (
+                  // Nao existe mais no servidor: conectar/desconectar nao faz
+                  // sentido, o que resta e remover o cadastro orfao.
+                  <RemoveMissingInstance
+                    instanceId={instance.id}
+                    name={instance.name}
+                    missingSince={instance.missing_since}
+                  />
+                ) : instance.status === 'disconnected' ? (
                   <ConnectButton instanceId={instance.id} />
                 ) : (
                   <DisconnectButton instanceId={instance.id} />

@@ -5,6 +5,63 @@ Registrar aqui toda implementação, fix e decisão técnica relevante ao final 
 
 ---
 
+## 2026-10-23 — Instancias excluidas no uazapiGO deixavam cadastro orfao no painel
+
+Sintoma: duas instancias foram excluidas no painel do uazapiGO e continuaram aparecendo no sistema,
+com status congelado, sem nenhuma forma de tirar da lista.
+
+Causa: a reconciliacao do monitor so sabia comparar o que EXISTE nos dois lados. Um cadastro que
+sumia da listagem do uazapiGO simplesmente nao era visitado — nenhum erro, nenhum aviso, ele
+ficava para sempre.
+
+### O que foi feito
+
+**Migration 014** — coluna `instances.missing_since timestamptz` (NULL = presente na listagem).
+
+**Deteccao automatica no monitor** (`app/api/monitor/tick/route.ts`)
+- `reconcileServer` passou a devolver `matchedIds`: quais cadastros o servidor confirmou.
+- `marcarSumidas()` carimba `missing_since` em quem nao foi confirmado por servidor NENHUM, e
+  limpa a marca de quem reapareceu.
+- **So roda quando `errors.length === 0`**: com uma consulta de servidor falhando, a listagem esta
+  incompleta e marcar sumida seria falso positivo em cima de instancia boa.
+- O resumo do tick ganhou `missing: [{ nome, desde }]` ao lado de `orphans` (que e o caso inverso:
+  existe no uazapiGO e nao no painel).
+
+**Exclusao e deliberada, nunca automatica** (`POST /api/instances/[id]/purge`)
+- Apagar a linha leva junto `webhook_events`, `notifications_log` e `reconnect_tokens`
+  (ON DELETE CASCADE). Por isso o monitor so marca; quem apaga e o operador.
+- Antes de apagar, a rota reconfirma na hora via `listInstances()`:
+  - ainda existe la → **409** (apagar o cadastro deixaria a instancia viva e cobrando, invisivel);
+  - nao deu para confirmar → **503** (tente de novo);
+  - `{ force: true }` passa por cima dos dois, para o caso de o servidor estar fora do ar de vez.
+- Diferente do `DELETE /api/instances/[id]`, que e soft-delete + exclusao no uazapiGO.
+
+**UI** (`components/admin/instance-table.tsx`, `components/admin/remove-missing-instance.tsx`)
+- Badge ambar "sumiu do uazapiGO" ao lado do nome, com a data no title.
+- Na coluna de acoes, quem sumiu troca Conectar/Desconectar por **Remover** — conectar uma
+  instancia que nao existe mais nao faz sentido.
+- Dialog de confirmacao lista o que vai junto sem volta e avisa que cliente e demais cadastros
+  nao sao afetados.
+
+### Verificacao
+Pagina temporaria com 4 linhas falsas (2 marcadas como sumidas) no dev server: badge, botao e
+dialog conferidos em tela. `tsc --noEmit` e `eslint` limpos nos arquivos tocados. Pagina e
+`.env.local` temporarios removidos.
+
+### Pendencias do lado do usuario
+- Aplicar **migration 013** (purge limitado) e **014** no Supabase — sem a 014, `missing_since`
+  nao existe e o `withMissingColumnFallback` descarta a marcacao silenciosamente.
+- Depois da 014 aplicada, esperar um tick (2 min) para as duas instancias excluidas aparecerem
+  marcadas, e entao remover pelo botao.
+
+### Observacao fora do escopo (nao mexi)
+O console do painel ja registrava, antes desta mudanca, um aviso do Base UI em toda linha da
+tabela: `Button render={<Link/>}` (botoes "Ver" e "Conectar") monta um `<a>` onde o Base UI
+espera um `<button>` nativo. Resolve-se com `nativeButton={false}` nesses dois pontos. E codigo
+pre-existente e nao tem relacao com esta entrega — fica registrado para decisao.
+
+---
+
 ## 2026-10-06 — Aviso de "webhook mudo" era falso alarme repetido a cada 2 min
 
 Sintoma: `[monitor] ⚠️ Nenhuma entrega de webhook ha 1114 min` no log do Worker, a cada tick.

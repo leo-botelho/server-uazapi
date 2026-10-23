@@ -137,6 +137,10 @@ async function runTick(request: NextRequest): Promise<NextResponse> {
   const orphans: string[] = []
   const driftErrors: string[] = []
   const errors: string[] = []
+  // Ids confirmados por ALGUM servidor — a checagem de sumidas so vale depois
+  // de consultar todos, senao uma instancia do servidor B viraria "sumida" por
+  // nao estar no servidor A.
+  const confirmados = new Set<string>()
 
   for (const target of targets) {
     try {
@@ -148,12 +152,20 @@ async function runTick(request: NextRequest): Promise<NextResponse> {
       renamed  += result.renamed
       orphans.push(...result.orphans)
       driftErrors.push(...result.driftErrors)
+      result.matchedIds.forEach((id) => confirmados.add(id))
     } catch (err) {
       const msg = `${target.label}: ${err instanceof Error ? err.message : String(err)}`
       console.error('[monitor]', msg)
       errors.push(msg)
     }
   }
+
+  // ── 2b. Instancias que sumiram do uazapiGO ────────────────────────────────
+  // So roda se TODOS os servidores responderam: com uma consulta falhando, a
+  // lista esta incompleta e marcar sumida seria falso positivo.
+  const missing = errors.length === 0
+    ? await marcarSumidas(supabase, confirmados)
+    : []
 
   marcar('reconcilia')
 
@@ -282,6 +294,8 @@ async function runTick(request: NextRequest): Promise<NextResponse> {
     ...(driftErrors.length ? { driftErrors } : {}),
     // Existem no uazapiGO e nao no painel — precisam de "Sincronizar".
     ...(orphans.length ? { orphans } : {}),
+    // Existem no painel e nao no uazapiGO — excluidas la, cadastro orfao aqui.
+    ...(missing.length ? { missing } : {}),
     pendingAlertsSent: flushed,
     purged,
     webhook: {
@@ -365,11 +379,11 @@ async function resolveServers(
 async function reconcileServer(
   supabase: Awaited<ReturnType<typeof createServiceClient>>,
   target: ServerTarget
-): Promise<{ checked: number; changed: number; alerted: number; repaired: number; renamed: number; orphans: string[]; driftErrors: string[] }> {
+): Promise<{ checked: number; changed: number; alerted: number; repaired: number; renamed: number; orphans: string[]; driftErrors: string[]; matchedIds: string[] }> {
   const remote = await target.client.listInstances()
 
   if (!Array.isArray(remote) || remote.length === 0) {
-    return { checked: 0, changed: 0, alerted: 0, repaired: 0, renamed: 0, orphans: [], driftErrors: [] }
+    return { checked: 0, changed: 0, alerted: 0, repaired: 0, renamed: 0, orphans: [], driftErrors: [], matchedIds: [] }
   }
 
   // Token canonico da instancia remota — mesma regra usada pelo sync.
@@ -407,6 +421,9 @@ async function reconcileServer(
   const orphans: string[] = []
   const driftErrors: string[] = []
   const apenasVistas: string[] = []
+  // Quais cadastros do banco este servidor confirmou que existem. O que sobrar
+  // e candidato a "sumiu do uazapiGO".
+  const matchedIds: string[] = []
   const now = new Date().toISOString()
 
   for (const inst of remote) {
@@ -446,6 +463,7 @@ async function reconcileServer(
     }
 
     checked++
+    matchedIds.push(row.id)
 
     if (!isInstanceStatus(inst.status)) {
       console.warn(`[monitor] status desconhecido "${String(inst.status)}" em "${row.name}", ignorando`)
@@ -571,7 +589,65 @@ async function reconcileServer(
     }
   }
 
-  return { checked, changed, alerted, repaired, renamed, orphans, driftErrors }
+  return { checked, changed, alerted, repaired, renamed, orphans, driftErrors, matchedIds }
+}
+
+/**
+ * Marca (e desmarca) as instancias que nao aparecem mais na listagem do
+ * uazapiGO — normalmente excluidas por la, deixando o cadastro orfao no painel.
+ *
+ * Aqui so carimba a data. A exclusao do cadastro e deliberada, feita pelo
+ * operador na tela: apagar a linha leva junto o historico (eventos, alertas e
+ * tokens cascateiam), e uma listagem incompleta por falha de API apagaria
+ * cadastros bons.
+ */
+async function marcarSumidas(
+  supabase: Awaited<ReturnType<typeof createServiceClient>>,
+  confirmados: Set<string>
+): Promise<Array<{ nome: string; desde: string }>> {
+  const { data: ativas, error } = await supabase
+    .from('instances')
+    .select('id, name, missing_since')
+    .eq('active', true)
+
+  if (error) {
+    console.warn('[monitor] checagem de instancias sumidas falhou:', error.message)
+    return []
+  }
+
+  const agora = new Date().toISOString()
+  const sumidas = (ativas ?? []).filter((i) => !confirmados.has(i.id))
+  const voltaram = (ativas ?? []).filter((i) => confirmados.has(i.id) && i.missing_since !== null)
+
+  // Carimba so as que ainda nao estavam marcadas, para preservar desde quando.
+  const novas = sumidas.filter((i) => i.missing_since === null)
+  if (novas.length > 0) {
+    const { error: marcaError } = await withMissingColumnFallback(
+      { missing_since: agora },
+      (p) => supabase.from('instances').update(p).in('id', novas.map((i) => i.id)),
+      'marcar instancias sumidas'
+    )
+    if (marcaError) console.error('[monitor] falha ao marcar sumidas:', marcaError.message)
+    else {
+      console.warn(
+        `[monitor] ${novas.length} instancia(s) sumiram do uazapiGO: ` +
+        `${novas.map((i) => i.name).join(', ')}. O cadastro continua no painel ate alguem remover.`
+      )
+    }
+  }
+
+  // Reapareceu (voltou na listagem, ou era falha temporaria): limpa a marca.
+  if (voltaram.length > 0) {
+    const { error: limpaError } = await withMissingColumnFallback(
+      { missing_since: null },
+      (p) => supabase.from('instances').update(p).in('id', voltaram.map((i) => i.id)),
+      'limpar marca de sumida'
+    )
+    if (limpaError) console.error('[monitor] falha ao limpar marca de sumida:', limpaError.message)
+    else console.log(`[monitor] ${voltaram.length} instancia(s) voltaram a aparecer no uazapiGO`)
+  }
+
+  return sumidas.map((i) => ({ nome: i.name, desde: i.missing_since ?? agora }))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

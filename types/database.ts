@@ -137,6 +137,7 @@ export type Database = {
           profile_picture: string | null
           last_disconnected_at: string | null
           last_seen_at: string | null
+          missing_since: string | null
           alert_channel: 'email' | 'whatsapp' | 'n8n' | 'none'
           alert_config: Json
           silence_start: number
@@ -157,6 +158,7 @@ export type Database = {
           profile_picture?: string | null
           last_disconnected_at?: string | null
           last_seen_at?: string | null
+          missing_since?: string | null
           alert_channel?: 'email' | 'whatsapp' | 'n8n' | 'none'
           alert_config?: Json
           silence_start?: number
@@ -177,6 +179,7 @@ export type Database = {
           profile_picture?: string | null
           last_disconnected_at?: string | null
           last_seen_at?: string | null
+          missing_since?: string | null
           alert_channel?: 'email' | 'whatsapp' | 'n8n' | 'none'
           alert_config?: Json
           silence_start?: number
