@@ -43,6 +43,7 @@ export function GroupWorkspace({ instanceId, instanceName, grupos, precisaAtuali
   const [, startTransition] = useTransition()
 
   const [busca, setBusca] = useState('')
+  const [somenteAdmin, setSomenteAdmin] = useState(false)
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set())
   const [rascunho, setRascunho] = useState<RascunhoDaMensagem>(RASCUNHO_VAZIO)
   const [marcarTodos, setMarcarTodos] = useState(false)
@@ -206,6 +207,8 @@ export function GroupWorkspace({ instanceId, instanceName, grupos, precisaAtuali
           selecionados={new Set(alvos)}
           busca={busca}
           aoBuscar={setBusca}
+          somenteAdmin={somenteAdmin}
+          aoMudarSomenteAdmin={setSomenteAdmin}
           aoAlternar={alternar}
           aoSelecionarVarios={(jids) => setSelecionados(new Set(jids))}
           aoLimpar={() => setSelecionados(new Set())}

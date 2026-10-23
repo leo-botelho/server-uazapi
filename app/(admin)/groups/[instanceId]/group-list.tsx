@@ -18,15 +18,21 @@ export function normalizarBusca(texto: string): string {
 }
 
 /**
- * Filtra por nome ou JID. Pura, exportada para teste.
+ * Filtra por nome ou JID e, opcionalmente, só os grupos em que o número
+ * conectado é admin. Pura, exportada para teste.
  */
-export function filtrarGrupos(grupos: GrupoEmCache[], busca: string): GrupoEmCache[] {
+export function filtrarGrupos(
+  grupos: GrupoEmCache[],
+  busca: string,
+  somenteAdmin = false
+): GrupoEmCache[] {
   const termo = normalizarBusca(busca)
-  if (!termo) return grupos
 
-  return grupos.filter(
-    (g) => normalizarBusca(g.name ?? '').includes(termo) || g.group_jid.toLowerCase().includes(termo)
-  )
+  return grupos.filter((g) => {
+    if (somenteAdmin && !g.owner_is_admin) return false
+    if (!termo) return true
+    return normalizarBusca(g.name ?? '').includes(termo) || g.group_jid.toLowerCase().includes(termo)
+  })
 }
 
 export function GroupList({
@@ -34,6 +40,8 @@ export function GroupList({
   selecionados,
   busca,
   aoBuscar,
+  somenteAdmin,
+  aoMudarSomenteAdmin,
   aoAlternar,
   aoSelecionarVarios,
   aoLimpar,
@@ -43,13 +51,15 @@ export function GroupList({
   selecionados: Set<string>
   busca: string
   aoBuscar: (texto: string) => void
+  somenteAdmin: boolean
+  aoMudarSomenteAdmin: (valor: boolean) => void
   aoAlternar: (jid: string) => void
   /** Marca esses JIDs (substitui a seleção atual). */
   aoSelecionarVarios: (jids: string[]) => void
   aoLimpar: () => void
   disabled?: boolean
 }) {
-  const filtrados = useMemo(() => filtrarGrupos(grupos, busca), [grupos, busca])
+  const filtrados = useMemo(() => filtrarGrupos(grupos, busca, somenteAdmin), [grupos, busca, somenteAdmin])
   const visiveis = filtrados.slice(0, LIMITE_DE_LINHAS)
 
   // Só entram na seleção em massa os grupos onde o número pode falar.
@@ -69,10 +79,24 @@ export function GroupList({
         />
       </div>
 
+      <div className="flex items-center gap-2">
+        <Checkbox
+          id="so-admin"
+          checked={somenteAdmin}
+          onCheckedChange={(v) => aoMudarSomenteAdmin(v === true)}
+        />
+        <label htmlFor="so-admin" className="cursor-pointer text-sm">
+          Só os grupos em que sou admin
+          <span className="ml-1 text-xs text-muted-foreground">
+            ({grupos.filter((g) => g.owner_is_admin).length})
+          </span>
+        </label>
+      </div>
+
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
         <span>
           {filtrados.length} {filtrados.length === 1 ? 'grupo' : 'grupos'}
-          {busca.trim() && ` de ${grupos.length}`}
+          {(busca.trim() || somenteAdmin) && ` de ${grupos.length}`}
           {' · '}
           <strong className="text-foreground">{selecionados.size}</strong> selecionado{selecionados.size === 1 ? '' : 's'}
         </span>
@@ -106,7 +130,11 @@ export function GroupList({
       <ul className="max-h-[32rem] divide-y divide-border overflow-y-auto rounded-lg border border-border">
         {visiveis.length === 0 && (
           <li className="px-3 py-8 text-center text-sm text-muted-foreground">
-            {grupos.length === 0 ? 'Nenhum grupo carregado ainda.' : 'Nenhum grupo encontrado.'}
+            {grupos.length === 0
+              ? 'Nenhum grupo carregado ainda.'
+              : somenteAdmin && !grupos.some((g) => g.owner_is_admin)
+                ? 'Nenhum grupo em que o número seja admin. Se isso parece errado, clique em Atualizar lista.'
+                : 'Nenhum grupo encontrado.'}
           </li>
         )}
 
