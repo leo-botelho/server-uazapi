@@ -290,3 +290,33 @@ export {
   camposParaAtualizar,
 } from './cache-regras'
 export type { GrupoEmCache } from './cache-regras'
+
+/**
+ * Grava um grupo que ainda NÃO está no cache (acabou de ser criado, ou o número acabou de
+ * entrar). `atualizarCacheComGrupo` só atualiza linhas existentes.
+ *
+ * `somosAdmin`: quem cria é admin, mas a resposta nem sempre diz — sem isto a linha nasceria
+ * com `owner_is_admin = false` e a tela travaria as edições de um grupo que acabou de ser nosso.
+ * Nunca lança: o grupo já foi criado no WhatsApp, e o cache se corrige no "Atualizar lista".
+ */
+export async function registrarGrupoNoCache(
+  instanceId: string,
+  grupo: UazapiGroup,
+  opcoes: { somosAdmin?: boolean } = {}
+): Promise<void> {
+  try {
+    const db = await createServiceClient()
+    const completo: UazapiGroup = {
+      ...grupo,
+      OwnerIsAdmin: grupo.OwnerIsAdmin ?? opcoes.somosAdmin ?? false,
+    }
+
+    const { error } = await db.rpc('refresh_group_cache_upsert', {
+      p_instance: instanceId,
+      p_rows: [mapearGrupoParaLinha(completo)] as unknown as Json,
+    })
+    if (error) console.warn('[groups/cache] não foi possível registrar o grupo novo:', error.message)
+  } catch (err) {
+    console.warn('[groups/cache] não foi possível registrar o grupo novo:', err instanceof Error ? err.message : err)
+  }
+}

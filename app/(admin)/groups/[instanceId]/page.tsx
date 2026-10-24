@@ -1,7 +1,7 @@
 import { Suspense } from 'react'
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
-import { CalendarClock, ChevronLeft } from 'lucide-react'
+import { CalendarClock, ChevronLeft, UserRoundPlus } from 'lucide-react'
 
 import { GroupWorkspace } from './group-workspace'
 import { MigrationPending } from '@/components/admin/groups/migration-pending'
@@ -62,16 +62,28 @@ async function Conteudo({ instanceId }: { instanceId: string }) {
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-3xl font-bold tracking-tight">{instance.name}</h1>
           <InstanceStatusBadge status={instance.status} />
-          <Button
-            variant="outline"
-            size="sm"
-            render={<Link href={`/groups/${instance.id}/agenda`} />}
-            nativeButton={false}
-            className="ml-auto gap-1.5"
-          >
-            <CalendarClock className="size-4" aria-hidden />
-            Agendamentos
-          </Button>
+          <div className="ml-auto flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              render={<Link href={`/groups/${instance.id}/novo`} />}
+              nativeButton={false}
+              className="gap-1.5"
+            >
+              <UserRoundPlus className="size-4" aria-hidden />
+              Criar / entrar / comunidades
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              render={<Link href={`/groups/${instance.id}/agenda`} />}
+              nativeButton={false}
+              className="gap-1.5"
+            >
+              <CalendarClock className="size-4" aria-hidden />
+              Agendamentos
+            </Button>
+          </div>
         </div>
 
         <p className="text-sm text-muted-foreground">

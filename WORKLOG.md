@@ -5,6 +5,51 @@ Registrar aqui toda implementação, fix e decisão técnica relevante ao final 
 
 ---
 
+## 2026-10-24 — Exportacoes CSV, criar grupo, entrar por convite e comunidades
+
+Pedido do usuario: "deixar enquete para depois e implementar o restante" (todas as migrations ja aplicadas).
+Esta entrega cobre o que a fase 2/6 do plano tinha deixado de fora. Sem migration nova.
+
+### Exportacoes CSV
+- **Lista de grupos** (`GET /api/instances/[id]/groups/export`): sai do CACHE, sem chamar a uazapiGO. 409 se o
+  cache esta vazio. So metadado do grupo, nenhum participante.
+- **Participantes dos selecionados**: lidos AO VIVO, UM PEDIDO POR GRUPO (reaproveita `groups/info`, pausa de 1,5 s
+  entre grupos) e o CSV e montado no NAVEGADOR. Motivo: plano Free = 10 ms de CPU por pedido, e um grupo grande ja
+  custa isso; assim nao ha limite de grupos por exportacao e nada pessoal fica guardado. Grupo que falha entra no
+  aviso e o arquivo sai com os demais.
+- `lib/groups/csv.ts`: `;` como separador e BOM UTF-8 (Excel em portugues abre CSV com virgula numa coluna so);
+  **neutraliza injecao de formula** — nome de grupo e digitado por qualquer participante, e `=HYPERLINK(...)` roda ao
+  abrir no Excel (celula que comeca com `= + - @ tab CR` ganha `'`); telefone formatado ("55 21 98765-4321") para o
+  Excel nao mostrar notacao cientifica; grupo em modo LID sem telefone = celula vazia, nunca o ID opaco como numero.
+- Aviso de LGPD ao lado dos botoes; a rota registra no log quem exportou e quantos grupos.
+
+### Criar grupo / entrar por convite / comunidades (`/groups/[instanceId]/novo`)
+Tres rotas novas (`groups/criar`, `groups/entrar`, `groups/comunidade`), todas exigem `confirmar: true` NO SERVIDOR
+(a tela nao e fronteira de seguranca) e registram no log quem fez o que.
+- **Criar**: nome ate 100 (o de criar; renomear documenta 25), 1 a 50 telefones, normalizados como na remocao em
+  massa (aceita planilha, nono digito etc.). Aviso fixo: adicionar a forca quem nao tem o numero salvo e a maior causa
+  de denuncia/banimento; acima de 50, criar com poucos e divulgar o link. O grupo novo entra no cache JA como admin
+  (`registrarGrupoNoCache`), senao as edicoes nasceriam travadas.
+- **Entrar por convite**: "Ver o grupo" (inviteInfo) mostra nome, tamanho e se exige aprovacao ANTES de confirmar;
+  so aceita `chat.whatsapp.com` ou codigo puro (convite de outro dominio e como phishing circula). Entrar NAO faz o
+  numero admin.
+- **Comunidades**: criar; vincular/desvincular ate 20 grupos por vez. So age em comunidade em que o cache diz que o
+  numero e admin (a API recusaria, mas a mensagem daqui e clara); comunidade nao vincula a si mesma. Resultado parcial
+  ("1 vinculado, 1 recusado") e mostrado, sem fingir sucesso total.
+- A resposta da uazapiGO pode vir como `Group` direto (spec de create/inviteInfo) ou `{ group }` (join/community):
+  `grupoDaResposta` aceita os dois. Erro 400 da API agora volta com a mensagem dela.
+
+### Verificado
+- Regras: CSV **42**, criar/convite/comunidade **46**; regressao do restante intacta. `tsc` e `eslint` limpos.
+- Navegador (dados falsos): exportar lista (nome do arquivo, conteudo), participantes de 3 grupos com o 3o falhando
+  (2 no arquivo + aviso), formula neutralizada no arquivo gerado; criar com previa "2 pessoas + 1 trecho ignorado" e
+  botao travado sem telefones; convite de outro dominio barrado; ver -> confirmar -> entrar; vincular enviando o corpo
+  certo, falha parcial avisada, desvincular, busca.
+- NAO verificado contra a uazapiGO real: nenhuma das tres rotas novas (formato exato das respostas, se `create` devolve
+  o grupo direto ou em envelope, limites de criacao/entrada do WhatsApp). Testar primeiro com um grupo de teste.
+
+---
+
 ## 2026-10-24 — Modulo de grupos: ESTADO ATUAL, PENDENCIAS E LINHA DO TEMPO (leia primeiro)
 
 Resumo para quem abrir o projeto agora. O detalhe tecnico de cada etapa esta nas entradas abaixo.

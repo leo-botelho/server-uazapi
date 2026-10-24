@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { CalendarClock, OctagonAlert, RefreshCw, Send, TriangleAlert } from 'lucide-react'
 
 import { DispatchProgress } from './dispatch-progress'
+import { ExportButtons } from './export-buttons'
 import { GroupList } from './group-list'
 import { ScheduleComposer, type ExecucaoPrevista } from './schedule-composer'
 import { useDispatch } from './use-dispatch'
@@ -299,6 +300,8 @@ export function GroupWorkspace({ instanceId, instanceName, grupos, precisaAtuali
             {atualizando ? 'Atualizando…' : 'Atualizar lista'}
           </Button>
         </div>
+
+        <ExportButtons instanceId={instanceId} nomes={nomes} selecionados={alvos} />
 
         <GroupList
           instanceId={instanceId}
