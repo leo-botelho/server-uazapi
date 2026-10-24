@@ -50,15 +50,22 @@ export const ATRASO_DIGITANDO_MS = 1800
 /** Folga de relógio entre o navegador e o servidor ao conferir o espaçamento. */
 export const TOLERANCIA_ESPACAMENTO_MS = 750
 
-export function espacamentoMinimo(marcarTodos: boolean): number {
-  return marcarTodos ? ESPACAMENTO_MINIMO_MARCAR_TODOS_S : ESPACAMENTO_MINIMO_S
+/**
+ * O piso do intervalo. Marcando todos o padrão é 60 s — a não ser que a pessoa tenha ligado
+ * o MODO AVANÇADO (`aceitouRisco`), caso em que vale o piso geral de 5 s. Os 60 s e o teto de
+ * 10 grupos são recomendações minhas, não regras do WhatsApp: quem já opera com intervalo
+ * curto e muitos grupos (o n8n do usuário, a 5 s) precisa poder, desde que confirme.
+ */
+export function espacamentoMinimo(marcarTodos: boolean, aceitouRisco = false): number {
+  return marcarTodos && !aceitouRisco ? ESPACAMENTO_MINIMO_MARCAR_TODOS_S : ESPACAMENTO_MINIMO_S
 }
 
 /** Mensagem pronta para a tela quando o espaçamento pedido é baixo demais. */
-export function mensagemDeEspacamentoBaixo(marcarTodos: boolean): string {
-  const piso = espacamentoMinimo(marcarTodos)
-  return marcarTodos
-    ? `Marcando todos, o intervalo mínimo é de ${piso} segundos entre um grupo e outro.`
+export function mensagemDeEspacamentoBaixo(marcarTodos: boolean, aceitouRisco = false): string {
+  const piso = espacamentoMinimo(marcarTodos, aceitouRisco)
+  return marcarTodos && !aceitouRisco
+    ? `Marcando todos, o intervalo recomendado mínimo é de ${piso} segundos entre um grupo e outro. ` +
+        'Para ir abaixo disso, ative o modo avançado de “Marcar todos”.'
     : `O intervalo mínimo é de ${piso} segundos entre um grupo e outro.`
 }
 

@@ -5,7 +5,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { avaliarAgendamento } from '@/lib/groups/agenda'
 import { prefixoDoBucket } from '@/lib/groups/executar'
 import type { GrupoConhecido } from '@/lib/groups/dispatch'
-import { tabelaNaoExiste, verificarInstalacaoDoAgendador } from '@/lib/groups/install'
+import { avisoDaTravaAntigaDeIntervalo, tabelaNaoExiste, verificarInstalacaoDoAgendador } from '@/lib/groups/install'
 import { executarPrevoo } from '@/lib/groups/preflight'
 import type { Json } from '@/types/database'
 
@@ -93,6 +93,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       marcarTodos: corpo.marcarTodos,
       espacamentoS: corpo.espacamentoS,
       jitterPct: corpo.jitterPct,
+      aceitoRiscoMarcarTodos: corpo.aceitoRiscoMarcarTodos,
     },
     conhecidos,
     prefixoDoBucket()
@@ -130,6 +131,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     })
     .select('id')
     .single()
+
+  const travaAntiga = avisoDaTravaAntigaDeIntervalo(erroDaTarefa)
+  if (travaAntiga) return NextResponse.json({ error: travaAntiga, migracaoPendente: true }, { status: 503 })
 
   if (erroDaTarefa || !tarefa) {
     console.error('[groups/tasks] falha ao criar a tarefa:', erroDaTarefa?.message)

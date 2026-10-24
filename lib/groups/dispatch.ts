@@ -45,6 +45,8 @@ export interface PedidoDeInicio {
   jitterPct: unknown
   /** Passar por cima do bloqueio por COTA. Nunca vale para a restrição do WhatsApp. */
   liberarCota: unknown
+  /** Modo avançado de marcar todos: sem o teto de 10 grupos e com intervalo a partir de 5 s. */
+  aceitoRiscoMarcarTodos?: unknown
 }
 
 export interface GrupoConhecido {
@@ -76,6 +78,12 @@ export interface AlvosEEspacamento {
   marcarTodos: unknown
   espacamentoS: unknown
   jitterPct: unknown
+  /**
+   * O modo avançado de marcar todos: a pessoa confirmou que sabe do risco. Sem isto valem as
+   * recomendações (até 10 grupos, 60 s); com isto, só os limites gerais. A confirmação é
+   * exigida AQUI porque a tela não é fronteira de segurança.
+   */
+  aceitoRiscoMarcarTodos?: unknown
 }
 
 export interface OpcoesDeAlvos {
@@ -120,13 +128,16 @@ export function avaliarAlvosEEspacamento(
 
   const marcarTodos = pedido.marcarTodos === true
 
-  // ── Marcar todos: o teto ───────────────────────────────────────────────────
-  if (marcarTodos && alvos.length > MAX_GRUPOS_MARCANDO_TODOS) {
+  const aceitouRisco = marcarTodos && pedido.aceitoRiscoMarcarTodos === true
+
+  // ── Marcar todos: o teto recomendado ───────────────────────────────────────
+  if (marcarTodos && !aceitouRisco && alvos.length > MAX_GRUPOS_MARCANDO_TODOS) {
     return recusar(
       409,
-      `Marcando todos, o limite é de ${MAX_GRUPOS_MARCANDO_TODOS} grupos por execução ` +
-      `(você selecionou ${alvos.length}). Marcar todos em muitos grupos é o que mais leva ao banimento do número.`,
-      { tetoMarcarTodos: true, limite: MAX_GRUPOS_MARCANDO_TODOS, pedidos: alvos.length }
+      `Marcando todos, o recomendado é até ${MAX_GRUPOS_MARCANDO_TODOS} grupos por execução ` +
+      `(você selecionou ${alvos.length}). Marcar todos em muitos grupos é o que mais leva ao banimento do número. ` +
+      'Se você já opera assim e aceita o risco, ative o modo avançado de “Marcar todos”.',
+      { tetoMarcarTodos: true, exigeModoAvancado: true, limite: MAX_GRUPOS_MARCANDO_TODOS, pedidos: alvos.length }
     )
   }
 
@@ -134,10 +145,11 @@ export function avaliarAlvosEEspacamento(
   const espacamentoS = inteiro(pedido.espacamentoS, ESPACAMENTO_PADRAO_S)
   if (espacamentoS === null) return recusar(400, 'O intervalo entre grupos precisa ser um número inteiro de segundos.')
 
-  if (espacamentoS < espacamentoMinimo(marcarTodos)) {
-    return recusar(400, mensagemDeEspacamentoBaixo(marcarTodos), {
+  if (espacamentoS < espacamentoMinimo(marcarTodos, aceitouRisco)) {
+    return recusar(400, mensagemDeEspacamentoBaixo(marcarTodos, aceitouRisco), {
       espacamentoBaixo: true,
-      minimo: espacamentoMinimo(marcarTodos),
+      exigeModoAvancado: marcarTodos && !aceitouRisco,
+      minimo: espacamentoMinimo(marcarTodos, aceitouRisco),
     })
   }
 

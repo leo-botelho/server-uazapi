@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/api-helpers'
 import { createServiceClient } from '@/lib/supabase/server'
 import { avaliarInicio, type GrupoConhecido } from '@/lib/groups/dispatch'
-import { tabelaNaoExiste } from '@/lib/groups/install'
+import { avisoDaTravaAntigaDeIntervalo, tabelaNaoExiste } from '@/lib/groups/install'
 import { executarPrevoo } from '@/lib/groups/preflight'
 import type { Json } from '@/types/database'
 
@@ -96,6 +96,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       espacamentoS: corpo.espacamentoS,
       jitterPct: corpo.jitterPct,
       liberarCota: corpo.liberarCota,
+      aceitoRiscoMarcarTodos: corpo.aceitoRiscoMarcarTodos,
     },
     conhecidos,
     previo.bloqueio,
@@ -206,6 +207,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     })
     .select('id')
     .single()
+
+  const travaAntiga = avisoDaTravaAntigaDeIntervalo(erroDaTarefa)
+  if (travaAntiga) return NextResponse.json({ error: travaAntiga, migracaoPendente: true }, { status: 503 })
 
   if (erroDaTarefa || !tarefa) {
     console.error('[groups/dispatch/start] falha ao criar a tarefa:', erroDaTarefa?.message)

@@ -29,16 +29,19 @@ export function SpacingField({
   value,
   onChange,
   marcarTodos,
+  aceitouRisco = false,
   quantidadeDeGrupos,
   disabled,
 }: {
   value: number
   onChange: (segundos: number) => void
   marcarTodos: boolean
+  /** Modo avançado de marcar todos: o piso volta a ser o geral (5 s). */
+  aceitouRisco?: boolean
   quantidadeDeGrupos: number
   disabled?: boolean
 }) {
-  const piso = espacamentoMinimo(marcarTodos)
+  const piso = espacamentoMinimo(marcarTodos, aceitouRisco)
 
   // O que a pessoa está digitando, que pode estar vazio ou abaixo do piso por um
   // instante. O valor oficial só muda quando o texto vira um número válido.
@@ -96,10 +99,10 @@ export function SpacingField({
         <Clock className="mt-0.5 size-3 shrink-0" aria-hidden />
         <span>
           {abaixo
-            ? mensagemDeEspacamentoBaixo(marcarTodos)
+            ? mensagemDeEspacamentoBaixo(marcarTodos, aceitouRisco)
             : quantidadeDeGrupos > 1
               ? `Mínimo ${piso} s. Com ${quantidadeDeGrupos} grupos, o envio leva cerca de ${formatarDuracao(total)}. Devagar é o que protege o número.`
-              : `Mínimo ${piso} s${marcarTodos ? ' marcando todos' : ''}.`}
+              : `Mínimo ${piso} s${marcarTodos && !aceitouRisco ? ' marcando todos' : ''}.`}
         </span>
       </p>
     </div>

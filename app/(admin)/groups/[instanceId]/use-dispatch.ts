@@ -42,6 +42,8 @@ export interface ConfigDoEnvio {
   espacamentoS: number
   jitterPct: number
   liberarCota?: boolean
+  /** Modo avançado de marcar todos: a pessoa confirmou o risco. */
+  aceitoRiscoMarcarTodos?: boolean
 }
 
 export interface EstadoDoEnvio {

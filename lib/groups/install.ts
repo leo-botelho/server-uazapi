@@ -89,3 +89,19 @@ export async function verificarInstalacaoDeLinks(): Promise<EstadoDaInstalacao> 
   console.error('[groups/install] falha ao verificar os links curtos:', error.message)
   return { estado: 'erro', detalhe: error.message }
 }
+
+/**
+ * A trava `group_tasks_mention_all_spacing` (migration 015) recusou a linha: marcar todos com
+ * intervalo abaixo de 60 s. É o que acontece no modo avançado enquanto a migration 019, que
+ * remove a trava, não foi aplicada. Devolve a mensagem para a tela, ou null se for outro erro.
+ */
+export function avisoDaTravaAntigaDeIntervalo(error: { code?: string; message: string } | null): string | null {
+  if (!error) return null
+  if (error.code === '23514' && /group_tasks_mention_all_spacing/.test(error.message)) {
+    return (
+      'O banco ainda recusa marcar todos com intervalo abaixo de 60 s. ' +
+      'Aplique a migration 019_mention_all_spacing.sql no Supabase para liberar o modo avançado.'
+    )
+  }
+  return null
+}

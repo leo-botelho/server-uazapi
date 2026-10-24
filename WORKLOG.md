@@ -5,6 +5,49 @@ Registrar aqui toda implementação, fix e decisão técnica relevante ao final 
 
 ---
 
+## 2026-10-24 — Marcar todos: modo avancado (mais de 10 grupos, intervalo a partir de 5 s) — migration 019
+
+O usuario opera no n8n com mais de 10 grupos, marcando todos, a 5 s entre grupos, "sem nunca ter
+problema". Os dois limites de marcar todos (10 grupos e 60 s) eram PALPITES meus, nao regras do
+WhatsApp; e travavam o botao dele com 13 grupos.
+
+Em vez de apagar a protecao ("trava com aviso", decidido no inicio), virou um **modo avancado
+opt-in**:
+- Padrao continua o recomendado: ate 10 grupos e 60 s marcando todos.
+- Interruptor "Modo avancado" (so aparece com marcar todos ligado): libera mais de 10 grupos e
+  intervalo a partir de 5 s. Os tetos GERAIS continuam (20 grupos no envio direto, 100 agendando,
+  piso de 5 s; o piso do banco `spacing_seconds >= 5` nao mudou).
+- **O servidor exige a confirmacao** (`aceitoRiscoMarcarTodos === true`, exatamente): a tela nao e
+  fronteira de seguranca. Sem ela a recusa traz `exigeModoAvancado` e diz que o modo existe. Valores
+  como "true" (texto), 1, null ou objeto NAO valem.
+- A confirmacao vale para aquele uso: desligar "Marcar todos" desliga o modo avancado, e ligar de novo
+  pede de novo. A confirmacao digitada (quantidade de grupos acima de 3) continua exigida.
+- Vale para os dois caminhos (envio direto e agendamento).
+
+### Migration 019 (aplicar a mao)
+Remove `group_tasks_mention_all_spacing` (marcar todos exigia 60 s no banco). Sem a 019 o modo avancado
+a menos de 60 s falha ao gravar (23514); as duas rotas reconhecem essa violacao e devolvem 503 dizendo
+para aplicar a 019, em vez de um 500 generico. Acima de 10 grupos a 60 s funciona sem a 019 (o teto
+de 10 nunca esteve no banco).
+
+### Tambem nesta rodada (commit anterior, 96a6e0e)
+- Botao "Enviar" apagado com 13 grupos: motivo agora em alerta visivel tambem no envio direto.
+- Nome acima de 25 caracteres: a spec documenta 25 para renomear, mas grupos com nomes maiores existem.
+  Virou AVISO (trava dura em 100, o limite de criar). Nao verificado se a uazapiGO aceita.
+
+### Verificado
+- 31 checagens novas das regras (recusa sem confirmacao, aceita com, tetos gerais mantidos, 4 s
+  recusado mesmo com confirmacao, "true" em texto nao vale, direto e agendado) + 11 do banco (a 015 recusa
+  5 s marcando todos com 23514; apos a 019 passa; 4 s e jitter > 50 seguem recusados; idempotente).
+  Regressao: 83 + 72 + 42 + 53 + 76.
+- Navegador, 13 grupos: sem marcar todos o botao libera; com marcar todos trava, com alerta e aviso no
+  interruptor; modo avancado libera e baixa o piso do campo para 5 s; desligar/religar marcar todos
+  desfaz o modo avancado; confirmacao digitada exigida; corpo enviado traz `aceitoRiscoMarcarTodos: true`.
+- NAO verificado: o comportamento do WhatsApp com esse ritmo. A decisao e do usuario, com base na
+  experiencia dele no n8n; o painel so deixa de impedir, com confirmacao.
+
+---
+
 ## 2026-10-24 — Envio apagado com 13 grupos; nome com mais de 25 caracteres
 
 - **Botao "Enviar" apagado sem explicacao (de novo).** Com 13 grupos e "Marcar todos" ligado o teto de

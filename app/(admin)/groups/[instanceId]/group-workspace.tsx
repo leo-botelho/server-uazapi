@@ -52,6 +52,8 @@ export function GroupWorkspace({ instanceId, instanceName, grupos, precisaAtuali
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set())
   const [rascunho, setRascunho] = useState<RascunhoDaMensagem>(RASCUNHO_VAZIO)
   const [marcarTodos, setMarcarTodos] = useState(false)
+  // Modo avançado de marcar todos: sem o teto de 10 grupos e com intervalo a partir de 5 s.
+  const [modoAvancado, setModoAvancado] = useState(false)
   const [espacamento, setEspacamento] = useState(ESPACAMENTO_PADRAO_S)
   const [confirmando, setConfirmando] = useState(false)
   const [atualizando, setAtualizando] = useState(false)
@@ -71,9 +73,11 @@ export function GroupWorkspace({ instanceId, instanceName, grupos, precisaAtuali
   const eMensagem = !agendar || passos.some(ehMensagem)
   // Marcar todos só vale para mensagens: numa alteração fica desligado de fato.
   const marcandoTodos = marcarTodos && eMensagem
+  // O modo avançado só vale enquanto marcar todos está ligado: desligar um desliga o outro de fato.
+  const aceitouRisco = modoAvancado && marcandoTodos
 
   // O piso sobe sozinho quando liga marcar todos; o valor efetivo nunca fica abaixo dele.
-  const espacamentoEfetivo = Math.max(espacamento, espacamentoMinimo(marcandoTodos))
+  const espacamentoEfetivo = Math.max(espacamento, espacamentoMinimo(marcandoTodos, aceitouRisco))
 
   // Seleção só vale para grupos que ainda existem na lista (ela pode ter sido atualizada).
   const jidsValidos = useMemo(() => new Set(grupos.map((g) => g.group_jid)), [grupos])
@@ -163,7 +167,7 @@ export function GroupWorkspace({ instanceId, instanceName, grupos, precisaAtuali
 
   // ── Enviar / agendar ───────────────────────────────────────────────────────
   const problema = validarRascunho(rascunho)
-  const excedeTetoDeMarcarTodos = marcandoTodos && alvos.length > MAX_GRUPOS_MARCANDO_TODOS
+  const excedeTetoDeMarcarTodos = marcandoTodos && !aceitouRisco && alvos.length > MAX_GRUPOS_MARCANDO_TODOS
   const bloqueadoNoPrevoo = previo?.bloqueio != null && !previo.podeForcar
 
   // Os grupos como a rota os enxerga: o que o cache sabe de permissões.
@@ -198,6 +202,7 @@ export function GroupWorkspace({ instanceId, instanceName, grupos, precisaAtuali
         targetJids: alvos,
         passos: passos.map(passoParaApi),
         marcarTodos: marcandoTodos,
+        aceitoRiscoMarcarTodos: aceitouRisco,
         espacamentoS: espacamentoEfetivo,
         jitterPct: JITTER_PADRAO_PCT,
       },
@@ -219,7 +224,7 @@ export function GroupWorkspace({ instanceId, instanceName, grupos, precisaAtuali
     : alvos.length === 0 ? 'Selecione pelo menos um grupo.'
     : !problema.ok ? problema.erro
     : excedeTetoDeMarcarTodos
-      ? `Marcando todos, o limite é de ${MAX_GRUPOS_MARCANDO_TODOS} grupos por envio.`
+      ? `Marcando todos, o recomendado é até ${MAX_GRUPOS_MARCANDO_TODOS} grupos por envio. Ative o modo avançado para mais.`
     : bloqueadoNoPrevoo ? previo.bloqueio!.motivo
     : null
 
@@ -232,6 +237,7 @@ export function GroupWorkspace({ instanceId, instanceName, grupos, precisaAtuali
       kind,
       payload,
       marcarTodos,
+      aceitoRiscoMarcarTodos: aceitouRisco,
       espacamentoS: espacamentoEfetivo,
       jitterPct: JITTER_PADRAO_PCT,
       liberarCota,
@@ -240,7 +246,7 @@ export function GroupWorkspace({ instanceId, instanceName, grupos, precisaAtuali
     // Depois de qualquer envio o estado do número pode ter mudado.
     void consultarPrevoo()
     return concluiu
-  }, [rascunho, iniciar, instanceId, alvos, marcarTodos, espacamentoEfetivo, consultarPrevoo])
+  }, [rascunho, iniciar, instanceId, alvos, marcarTodos, aceitouRisco, espacamentoEfetivo, consultarPrevoo])
 
   const agendarAgora = useCallback(async () => {
     setAgendando(true)
@@ -252,6 +258,7 @@ export function GroupWorkspace({ instanceId, instanceName, grupos, precisaAtuali
       targetJids: alvos,
       passos: passos.map(passoParaApi),
       marcarTodos: marcandoTodos,
+      aceitoRiscoMarcarTodos: aceitouRisco,
       espacamentoS: espacamentoEfetivo,
       jitterPct: JITTER_PADRAO_PCT,
     })
@@ -265,7 +272,7 @@ export function GroupWorkspace({ instanceId, instanceName, grupos, precisaAtuali
 
     toast.success('Agendado.', r.dados.aviso ? { description: r.dados.aviso, duration: 10000 } : undefined)
     router.push(`/groups/${instanceId}/agenda`)
-  }, [nomeAg, passos, instanceId, alvos, marcandoTodos, espacamentoEfetivo, router])
+  }, [nomeAg, passos, instanceId, alvos, marcandoTodos, aceitouRisco, espacamentoEfetivo, router])
 
   const aoConfirmar = () => {
     setConfirmando(false)
@@ -386,24 +393,47 @@ export function GroupWorkspace({ instanceId, instanceName, grupos, precisaAtuali
                 <div className="space-y-0.5">
                   <Label htmlFor="marcar-todos">Marcar todos (@todos)</Label>
                   <p className="text-xs text-muted-foreground">
-                    Notifica todos os participantes de cada grupo. Intervalo mínimo de 60 s e até{' '}
-                    {MAX_GRUPOS_MARCANDO_TODOS} grupos por envio.
+                    Notifica todos os participantes de cada grupo. Recomendado: até {MAX_GRUPOS_MARCANDO_TODOS} grupos
+                    e 60 s entre eles.
                   </p>
                   {excedeTetoDeMarcarTodos && (
                     <p className="text-xs font-medium text-amber-400" role="status">
-                      Você selecionou {alvos.length} grupos: com “Marcar todos” ligado o máximo é {MAX_GRUPOS_MARCANDO_TODOS}.
-                      Desligue o interruptor ou selecione menos grupos (dá para enviar em duas levas).
+                      Você selecionou {alvos.length} grupos: acima do recomendado para marcar todos ({MAX_GRUPOS_MARCANDO_TODOS}).
+                      Ative o modo avançado abaixo, ou selecione menos grupos.
                     </p>
                   )}
                 </div>
-                <Switch id="marcar-todos" checked={marcarTodos} onCheckedChange={setMarcarTodos} />
+                <Switch
+                  id="marcar-todos"
+                  checked={marcarTodos}
+                  onCheckedChange={(ligado) => {
+                    setMarcarTodos(ligado)
+                    // A confirmação do risco vale para ESTE uso: desligar marcar todos a desfaz, e
+                    // ligar de novo pede de novo (senão ela ficaria ligada sem a pessoa lembrar).
+                    if (!ligado) setModoAvancado(false)
+                  }}
+                />
               </div>
+              )}
+
+              {marcandoTodos && (
+                <div className="flex items-start justify-between gap-4 rounded-lg border border-amber-500/40 p-3">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="modo-avancado">Modo avançado: sem o limite de {MAX_GRUPOS_MARCANDO_TODOS} grupos e com intervalo a partir de 5 s</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Marcar todos em muitos grupos, em sequência rápida, é o que mais leva ao banimento do número. Ative
+                      só se você já opera assim e aceita o risco.
+                    </p>
+                  </div>
+                  <Switch id="modo-avancado" checked={modoAvancado} onCheckedChange={setModoAvancado} />
+                </div>
               )}
 
               <SpacingField
                 value={espacamento}
                 onChange={setEspacamento}
                 marcarTodos={marcandoTodos}
+                aceitouRisco={aceitouRisco}
                 quantidadeDeGrupos={alvos.length}
               />
             </div>

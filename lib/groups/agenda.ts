@@ -278,6 +278,8 @@ export interface PedidoDeAgendamento {
   marcarTodos: unknown
   espacamentoS: unknown
   jitterPct: unknown
+  /** Modo avançado de marcar todos (ver `AlvosEEspacamento`). */
+  aceitoRiscoMarcarTodos?: unknown
 }
 
 export interface PassoAprovado {
