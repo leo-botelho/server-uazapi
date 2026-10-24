@@ -10,14 +10,16 @@ export type Resposta<T> =
 
 export async function chamarApi<T = Record<string, unknown>>(
   url: string,
-  corpo: Record<string, unknown>
+  corpo: Record<string, unknown>,
+  metodo: 'POST' | 'PATCH' | 'DELETE' = 'POST'
 ): Promise<Resposta<T>> {
   let res: Response
   try {
     res = await fetch(url, {
-      method: 'POST',
+      method: metodo,
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(corpo),
+      // DELETE não leva corpo.
+      ...(metodo === 'DELETE' ? {} : { body: JSON.stringify(corpo) }),
     })
   } catch {
     return { ok: false, erro: 'Sem conexão com o painel. Verifique a internet e tente de novo.', status: 0, marcadores: {} }

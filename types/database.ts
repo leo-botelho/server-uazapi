@@ -755,6 +755,32 @@ export type Database = {
         Relationships: []
       }
 
+      /** Links curtos com contagem de cliques (migration 017): a página pública é /l/<slug>. */
+      short_links: {
+        Row: {
+          id: string
+          slug: string
+          kind: 'youtube' | 'instagram' | 'whatsapp_grupo' | 'whatsapp_conversa'
+          target_url: string
+          label: string | null
+          active: boolean
+          clicks: number
+          last_click_at: string | null
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          slug: string
+          kind: 'youtube' | 'instagram' | 'whatsapp_grupo' | 'whatsapp_conversa'
+          target_url: string
+          label?: string | null
+          active?: boolean
+          created_by?: string | null
+        }
+        Update: { active?: boolean; label?: string | null }
+        Relationships: []
+      }
+
       /** Instante do último envio de cada instância (migration 016): a cadência é do NÚMERO. */
       group_instance_pace: {
         Row: { instance_id: string; last_action_at: string }
@@ -869,6 +895,14 @@ export type Database = {
       block_group_instance_tasks: {
         Args: { p_instance: string; p_reason: string }
         Returns: number
+      }
+      /**
+       * Resolve o slug de um link curto e, se `p_count`, conta o clique — numa
+       * instrução só. Link desativado ou inexistente não devolve linha.
+       */
+      resolve_short_link: {
+        Args: { p_slug: string; p_count?: boolean }
+        Returns: { kind: string; target_url: string }[]
       }
       cancel_group_task: { Args: { p_task: string }; Returns: number }
       resume_group_task: { Args: { p_task: string }; Returns: number }

@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { ChevronLeft } from 'lucide-react'
 
 import { LinkGenerator } from './link-generator'
+import { ShortLinks } from './short-links'
 
 export default function DeepLinksPage() {
   return (
@@ -21,6 +22,8 @@ export default function DeepLinksPage() {
       </div>
 
       <LinkGenerator />
+
+      <ShortLinks baseUrl={(process.env.NEXT_PUBLIC_APP_URL ?? '').replace(/\s+/g, '').replace(/\/$/, '')} />
     </div>
   )
 }

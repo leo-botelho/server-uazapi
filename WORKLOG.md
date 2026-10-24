@@ -5,6 +5,76 @@ Registrar aqui toda implementação, fix e decisão técnica relevante ao final 
 
 ---
 
+## 2026-10-24 — Modulo de grupos, fase 5 (parcial): links curtos e amostra do evento `groups`
+
+Feito: links curtos com contagem de cliques. **Nao feito, de proposito: mensagem de boas-vindas
+e acompanhamento de enquetes** (motivo abaixo).
+
+### Links curtos (`/l/<slug>`) — migration **017** (aplicar a mao; idempotente, rollback no cabecalho)
+
+O WhatsApp so deixa clicavel http(s); `instagram://...` colado na mensagem nao funciona. O link
+curto e https e, no celular, tenta abrir o app e cai para o site. Tambem da contagem aos convites
+de grupo e permite desligar um convite que vazou.
+
+- Tipos: YouTube, Instagram, convite de grupo, conversa (wa.me). **So esses**: um redirecionador
+  que aceita qualquer endereco e a ferramenta preferida de phishing. O destino e validado por
+  tipo (dominio exato — recusa `youtube.com@evil.com`, `youtube.com.evil.com`, dominio no caminho,
+  `javascript:`/`data:`), sempre https, sem porta e sem usuario embutido; o banco ainda recusa
+  tudo que nao seja https.
+- **Robo nao conta clique.** A previa que o WhatsApp monta busca o link: sem isso cada grupo que
+  recebesse a mensagem geraria um clique falso. Robo (WhatsApp, Facebook, Telegram, Google, curl,
+  sem User-Agent) resolve SEM contar e e redirecionado ao destino (a previa mostra o cartao do
+  video/perfil de verdade).
+- Pagina intermediaria so para pessoa no celular com destino que tem app (YouTube video/shorts,
+  perfil do Instagram): HTML puro, sem React (e aberta por anonimo e o plano e Free). Tenta o app;
+  em ~900 ms cai no https. Android usa `intent://` com `browser_fallback_url`; iOS usa o esquema.
+  Post/reel do Instagram precisam de id numerico que nao da para tirar do endereco: vao direto
+  ao https. WhatsApp nunca precisa de intermediario.
+- `resolve_short_link` resolve e conta em UMA instrucao (20 cliques simultaneos = 20). Slug que
+  nao tem a forma valida nem chega ao banco. Fora do `matcher` do middleware (ja estava).
+- Tela: dentro de "Links do WhatsApp" — criar, copiar, abrir destino, desativar/reativar, apagar
+  (confirmacao), cliques e ultimo clique. `chamarApi` ganhou o parametro de metodo (PATCH/DELETE).
+
+### Amostra do evento `groups` (4 linhas em `app/api/webhook/route.ts`)
+
+Quando o evento `groups` chegar, uma amostra MASCARADA vai para o log (maximo 30 por isolate). O
+payload traz o **token da instancia** e telefones: token/qrcode/etc. sao removidos, telefones de
+10-15 digitos ficam com os 4 ultimos, e o id do grupo (18 digitos) fica intacto — sem ele nao da
+para saber de qual grupo veio. Nao grava no banco, nao muda a resposta, nunca lanca.
+
+**Por que parei aqui nas boas-vindas:** a spec nao traz o formato do evento `groups`. Escrever o
+tratador agora seria codigo especulativo no caminho de producao do monitor e dos agentes. A
+sequencia certa e: (1) assinar `groups` no webhook GLOBAL (Configuracoes — nunca no webhook por
+instancia, que e do n8n); (2) ler a amostra no log; (3) so entao escrever o tratador e a
+migration 018 (regras por grupo + log anti-duplicata). **A assinatura e decisao do usuario**:
+aumenta o volume que passa pelo webhook (cada evento de grupo de toda instancia do servidor faz
+uma invocacao e um upsert de batimento) e foi justamente volume o que gerou os alertas de CPU.
+Sugestao: assinar numa janela curta, olhar as metricas do Worker, e so manter se estiver tranquilo.
+
+**Enquetes:** nao ha endpoint que leia votos; so da por `POST /message/find` (V7, nao verificado).
+O acompanhamento do ENVIO ja existe na tela de agendamentos. Fica para depois do teste real.
+
+### Verificado (automatico)
+
+- Regras dos links (`links-curtos.ts`): **62** checagens, incluindo 12 destinos de phishing.
+- Migration 017 no PGlite: **21** (resolve, conta, robo nao conta, desativado nao resolve,
+  20 cliques simultaneos, banco recusa http/javascript:/slug ruim/tipo invalido, grants e RLS).
+- Amostra do evento: **25** (token e telefone nao vazam, id do grupo preservado, teto, nao lanca).
+- Rota publica `/l/[slug]` rodando de verdade no dev server contra um PostgREST de mentira:
+  Android -> pagina com `intent://`, iPhone -> `youtube://`, PC/robo/sem User-Agent -> 302;
+  robo e sem UA chamaram o banco com `p_count:false`; slug com injecao e com `../` nem chegaram
+  ao banco; Instagram post e convite foram direto ao destino.
+- Tela de links no navegador com dados falsos: phishing e slug ruim barram o botao; corpo do
+  POST e do PATCH conferidos. `tsc` e `eslint` limpos nos arquivos novos.
+
+### NAO verificado
+
+- O comportamento de abrir o app em celular de verdade (heuristica; o esquema pode ser ignorado
+  por um navegador embutido e cair no site depois de 900 ms, que e a falha correta).
+- Contra Supabase real: migration 017 e rota. Aplicar a 017 antes de usar a tela de links.
+
+---
+
 ## 2026-10-24 — Modulo de grupos, fase 4: varios passos, varias datas, sequencias
 
 Um agendamento agora tem N passos; cada passo tem a propria acao e o proprio quando. Cobre

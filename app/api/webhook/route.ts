@@ -4,6 +4,7 @@ import { isInstanceStatus, type InstanceStatus } from '@/lib/uazapi/types'
 import { handleStatusTransition, type AlertInstance } from '@/lib/notifications'
 import type { Json } from '@/types/database'
 import { withMissingColumnFallback } from '@/lib/db-resilient'
+import { registrarAmostraDeGrupos } from '@/lib/groups/evento-grupos'
 
 // Public endpoint — no auth, no middleware cookie handling.
 // uazapiGO must be able to reach this without credentials.
@@ -70,6 +71,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   // Only care about connection events for status monitoring.
   if (eventType !== 'connection') {
+    // `groups`: só uma amostra mascarada no log, para descobrir o formato real do
+    // evento (a spec não traz). Não grava nada, não responde diferente e nunca lança.
+    if (eventType === 'groups') registrarAmostraDeGrupos(raw)
     return NextResponse.json({ received: true })
   }
 

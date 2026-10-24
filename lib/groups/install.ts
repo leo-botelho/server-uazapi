@@ -70,3 +70,22 @@ export async function verificarInstalacaoDoAgendador(): Promise<EstadoDaInstalac
   console.error('[groups/install] falha ao verificar o agendador:', error.message)
   return { estado: 'erro', detalhe: error.message }
 }
+
+/** A migration 017 (links curtos) já foi aplicada? Independe das demais. */
+export async function verificarInstalacaoDeLinks(): Promise<EstadoDaInstalacao> {
+  const db = await createServiceClient()
+
+  const { error } = await db
+    .from('short_links')
+    .select('id')
+    .limit(1)
+
+  if (!error) return { estado: 'ok' }
+
+  if (tabelaNaoExiste(error)) {
+    return { estado: 'pendente', detalhe: error.message }
+  }
+
+  console.error('[groups/install] falha ao verificar os links curtos:', error.message)
+  return { estado: 'erro', detalhe: error.message }
+}
