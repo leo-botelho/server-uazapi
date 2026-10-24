@@ -24,9 +24,10 @@ Resumo para quem abrir o projeto agora. O detalhe tecnico de cada etapa esta nas
 ### Migrations — o que o usuario aplicou (SQL Editor, a mao)
 - **015, 016, 017: aplicadas** (confirmado pelo usuario: "ja rodei as migrations", logo depois da entrega
   da 016/017).
-- **018 e 019: NAO confirmadas.** Foram criadas depois dessa confirmacao. Sem a 018 tudo funciona, mas cada
-  passo espera o minuto seguinte (a pausa de segundos so vale com ela). Sem a 019, marcar todos abaixo de
-  60 s no modo avancado responde 503 pedindo para aplica-la; acima de 10 grupos a 60 s funciona sem ela.
+- **019: aplicada** (confirmado pelo usuario em 2026-10-24, depois da entrega).
+- **018: NAO confirmada.** Foi criada depois da primeira confirmacao e o usuario so citou a 019. Sem a 018 tudo funciona, mas cada
+  passo espera o minuto seguinte (a pausa de segundos so vale com ela). (Sem a 019, marcar todos abaixo de 60 s no modo
+  avancado respondia 503 pedindo para aplica-la; agora aplicada, isso nao ocorre.)
 - Todas sao idempotentes e trazem `-- rollback:` no cabecalho. Numeracao: as boas-vindas (antes previstas
   como 017) ficam para a **020** em diante.
 
@@ -55,7 +56,7 @@ Resumo para quem abrir o projeto agora. O detalhe tecnico de cada etapa esta nas
 1. **Primeiro teste real do agendador** (nunca rodou contra Supabase/uazapi/Cloudflare reais): agendar uma
    mensagem simples para 1 grupo de teste, daqui a ~3 min; conferir que chegou e que a tela de Agendamentos
    mostra "Concluida". Depois testar nome -> descricao -> mensagem com 1 grupo e intervalo de 5 s.
-2. Aplicar a **018** e a **019** no Supabase.
+2. Aplicar a **018** no Supabase (a 019 ja foi aplicada).
 3. **Medir CPU no plano Free** (Workers metrics) depois do primeiro agendamento: 5 itens por passada e
    estimativa. Se passar de 10 ms, reduzir `MAX_ITENS_POR_PASSADA` em `lib/groups/scheduler-regras.ts`.
 4. Testar links curtos em celular real (heuristica de abrir o app) e conferir que a previa do WhatsApp
