@@ -5,6 +5,62 @@ Registrar aqui toda implementação, fix e decisão técnica relevante ao final 
 
 ---
 
+## 2026-10-24 — Pausa entre passos em segundos (migration 018)
+
+Feedback do usuario: 1 minuto minimo entre passos e muito (nome + descricao + mensagem = 3 min;
+foto, mais). Tinha razao: o minimo de 1 min era limite meu, nao necessidade.
+
+### O que limitava de verdade
+
+- O agendador roda a cada minuto, mas cada passada dorme ate 45 s e processa varios itens, entao
+  passos a segundos um do outro cabem NA MESMA passada — se o agendador abrir a execucao antes
+  de ela vencer. Nao abria: `open_due_group_runs` so abria `run_at <= now()`, empurrando cada
+  passo para o minuto seguinte.
+- O ritmo real entre duas acoes do numero e o "Intervalo entre grupos" da tarefa (segundos; minimo
+  5, ou 60 com marcar todos), imposto pelo banco (`reserve_group_instance_slot`). Vale entre
+  QUAISQUER duas acoes, inclusive de passos diferentes.
+
+### Mudancas
+
+- **Migration 018** (aplicar a mao): `open_due_group_runs(p_horizon_seconds)` abre tambem as execucoes
+  que vencem dentro do horizonte do claim (40 s); o claim repassa o horizonte. A versao sem argumento
+  foi removida (duas daria "function is not unique"). Sem a 018 tudo funciona como antes, so que
+  cada passo espera o minuto seguinte (~1 min de pausa efetiva).
+- **Pausa em segundos** (`aposAnteriorSeg`, antes `aposAnteriorMin` — nunca gravado, so resolvido na
+  criacao). Unidades: segundos/minutos/horas/dias. Vazio = o minimo. Menor que o ritmo do numero
+  vira o ritmo (a acao nao sairia antes de qualquer jeito): `piso = max(5 s, ceil(intervalo x (1 - variacao)))`,
+  48 s com os padroes (60 s, 20%), 5 s com intervalo de 5 s.
+- A folga entre passos de data fixa deixou de ser 60 s fixos: agora e o mesmo piso.
+- Cronograma e lista de execucoes mostram SEGUNDOS (antes mostravam "10:00 / 10:00 / 10:00").
+- A dica no passo explica o piso e como baixa-lo (diminuir o intervalo entre grupos).
+
+### Resultado (1 grupo, nome -> descricao -> mensagem)
+
+- intervalo 60 s (padrao): 10:00:00 -> 10:00:48 -> 10:01:36 (antes: 10:00 -> 10:01 -> 10:02 no minimo)
+- intervalo 5 s: 10:00:00 -> 10:00:05 -> 10:00:10
+
+### Verificado
+
+- Banco: 15 checagens novas (3 passos de poucos segundos saem numa passada so, na ordem, com ~10 s
+  entre eles; passo a 5 min nao e aberto; tarefa pausada/cancelada e envio do navegador ativo
+  continuam segurando; o ritmo do numero segura a 2a acao mesmo estando no horizonte; so existe UMA
+  `open_due_group_runs`) + os 58 da 016 passam tambem com a 018 por cima (60 com as da 018).
+- Regras: 53 novas (pausa minima, pausa maior que o piso, invalida, combinacoes proibidas, ultimo
+  passo com varias datas, piso, tela) + 42 + 71 + 83 anteriores.
+- Navegador: unidade padrao "segundos", placeholder = piso (48 / 5 conforme o intervalo), corpo
+  enviado com `aposAnteriorSeg`. `tsc` limpo; eslint limpo nos arquivos tocados (o unico erro e de
+  `components/ui/textarea.tsx`, que ja era assim).
+
+### NAO verificado
+
+- Passos a segundos contra o WhatsApp real: depende do cron de 1 min do Cloudflare e da passada
+  conseguir dormir ate o horario sem passar dos 45 s. O inicio do 1o passo atrasa ate ~1 min; os
+  seguintes seguem o 1o.
+- Um item que nao cabe na passada (mais de 5 itens, ou espera acima de 45 s) segue na passada
+  seguinte: com muitos grupos o ritmo e o do intervalo, nao o da pausa.
+
+---
+
 ## 2026-10-24 — Agendamento: intervalo entre passos ("logo depois do anterior") + botao apagado sem motivo
 
 Primeiro teste do usuario: 3 passos (nome, descricao, mensagem), tudo preenchido, botao "Agendar"

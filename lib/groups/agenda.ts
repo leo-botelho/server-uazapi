@@ -39,8 +39,6 @@ export const HORIZONTE_MAXIMO_DIAS = 365
 /** Quantas datas um passo aceita. A tela da fase 3 usa uma; o modelo já comporta várias. */
 export const MAX_DATAS_POR_PASSO = 30
 
-/** Folga entre o fim de uma ocorrência e o início da seguinte do mesmo passo. */
-const FOLGA_ENTRE_OCORRENCIAS_MS = 60_000
 
 /** Ocorrência atrasada além disso vira "perdeu o horário" (espelha a migration 016). */
 export const TOLERANCIA_DE_ATRASO_MIN = 60
@@ -174,6 +172,24 @@ function conferirJanela(instantes: number[], agora: number): Erro | null {
 }
 
 /** Quanto leva para percorrer os grupos: o que uma ocorrência ocupa do relógio. */
+/**
+ * O menor intervalo entre duas ações do número: o "Intervalo entre grupos" já sem a
+ * variação (o mesmo piso que o banco impõe em `reserve_group_instance_slot`).
+ * É também a menor pausa que faz sentido entre passos — antes disso a ação seguinte
+ * só ficaria esperando o ritmo do número liberar.
+ */
+export const pisoEntreAcoesMs = (espacamentoS: number, jitterPct: number = JITTER_PADRAO_PCT) =>
+  Math.max(ESPACAMENTO_MINIMO_S, Math.ceil(espacamentoS * (1 - jitterPct / 100))) * 1000
+
+/** "45 s", "3 min", "1 h 05" — para as mensagens. */
+function duracaoPorExtenso(ms: number): string {
+  const s = Math.max(1, Math.ceil(ms / 1000))
+  if (s < 60) return `${s} s`
+  const min = Math.ceil(s / 60)
+  if (min < 60) return `${min} min`
+  return `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')}`
+}
+
 export const duracaoDaOcorrenciaMs = (
   quantidadeDeGrupos: number,
   espacamentoS: number,
@@ -191,15 +207,16 @@ export const duracaoDaOcorrenciaMs = (
  * tarefa ficaria correndo atrás do próprio rabo — então a rota recusa em vez de
  * aceitar uma agenda que não cabe. `instantes` ordenado, repetições incluídas.
  */
-function conferirSobreposicao(instantes: number[], duracaoMs: number): Erro | null {
+function conferirSobreposicao(instantes: number[], duracaoMs: number, pisoMs: number): Erro | null {
   for (let i = 1; i < instantes.length; i++) {
-    if (instantes[i] - instantes[i - 1] < duracaoMs + FOLGA_ENTRE_OCORRENCIAS_MS) {
+    if (instantes[i] - instantes[i - 1] < duracaoMs + pisoMs) {
       return erro(
         400,
         'Os passos estão juntos demais: cada um leva cerca de ' +
-          `${Math.max(1, Math.ceil(duracaoMs / 60_000))} min para percorrer os grupos e o seguinte só pode começar depois. ` +
+          `${duracaoPorExtenso(duracaoMs)} para percorrer os grupos e o seguinte só pode começar depois, ` +
+          `com pelo menos ${duracaoPorExtenso(pisoMs)} de pausa. ` +
           'Afaste as datas ou escolha “Logo depois do passo anterior”.',
-        { datasMuitoJuntas: true, duracaoMs }
+        { datasMuitoJuntas: true, duracaoMs, pisoMs }
       )
     }
   }
@@ -220,7 +237,11 @@ export function validarDatas(
   const janela = conferirJanela(lidas.instantes, agora)
   if (janela) return janela
 
-  const folga = conferirSobreposicao(lidas.instantes, duracaoDaOcorrenciaMs(quantidadeDeGrupos, espacamentoS, jitterPct))
+  const folga = conferirSobreposicao(
+    lidas.instantes,
+    duracaoDaOcorrenciaMs(quantidadeDeGrupos, espacamentoS, jitterPct),
+    pisoEntreAcoesMs(espacamentoS, jitterPct)
+  )
   if (folga) return folga
 
   return { ok: true, datas: lidas.instantes.map((t) => new Date(t).toISOString()) }
@@ -239,8 +260,11 @@ export interface PassoPedido {
   payload: unknown
   datas?: unknown
   offsetMinutos?: unknown
-  /** Minutos de pausa depois que o passo ANTERIOR termina de percorrer os grupos. */
-  aposAnteriorMin?: unknown
+  /**
+   * Segundos de pausa depois que o passo ANTERIOR termina de percorrer os grupos.
+   * Abaixo do ritmo do número (veja `pisoEntreAcoesMs`) vale o ritmo; 0 = o mínimo.
+   */
+  aposAnteriorSeg?: unknown
 }
 
 export interface PedidoDeAgendamento {
@@ -320,7 +344,7 @@ export function avaliarAgendamento(
 
   // ── Quando: o primeiro passo ancora, os demais podem ser relativos ─────────
   const primeiro = brutos[0] as Record<string, unknown>
-  const primeiroRelativo = [primeiro.offsetMinutos, primeiro.aposAnteriorMin].some((v) => v !== undefined && v !== null)
+  const primeiroRelativo = [primeiro.offsetMinutos, primeiro.aposAnteriorSeg].some((v) => v !== undefined && v !== null)
   if (primeiroRelativo) {
     return erro(400, 'O primeiro passo precisa de uma data fixa: é ele que marca o início da sequência.')
   }
@@ -335,29 +359,31 @@ export function avaliarAgendamento(
   const duracaoMs = duracaoDaOcorrenciaMs(
     alvos.aprovado.targetJids.length, alvos.aprovado.espacamentoS, alvos.aprovado.jitterPct
   )
+  const pisoMs = pisoEntreAcoesMs(alvos.aprovado.espacamentoS, alvos.aprovado.jitterPct)
 
   for (const [i, bruto] of brutos.entries()) {
     if (i === 0) continue
     const passo = bruto as Record<string, unknown>
     const temDatas = passo.datas !== undefined && passo.datas !== null
     const temAtraso = passo.offsetMinutos !== undefined && passo.offsetMinutos !== null
-    const temApos = passo.aposAnteriorMin !== undefined && passo.aposAnteriorMin !== null
+    const temApos = passo.aposAnteriorSeg !== undefined && passo.aposAnteriorSeg !== null
 
     if ([temDatas, temAtraso, temApos].filter(Boolean).length > 1) {
       return erro(400, `${prefixo(i)}escolha UMA forma de marcar o horário: data fixa, depois do início ou logo depois do passo anterior.`)
     }
 
     if (temApos) {
-      const pausa = passo.aposAnteriorMin
-      if (typeof pausa !== 'number' || !Number.isInteger(pausa) || pausa < 1 || pausa > MAX_ATRASO_RELATIVO_MIN) {
-        return erro(400, `${prefixo(i)}a pausa precisa ser um número inteiro de minutos, a partir de 1.`)
+      const pausa = passo.aposAnteriorSeg
+      if (typeof pausa !== 'number' || !Number.isInteger(pausa) || pausa < 0 || pausa > MAX_ATRASO_RELATIVO_MIN * 60) {
+        return erro(400, `${prefixo(i)}a pausa precisa ser um número inteiro de segundos (0 usa o mínimo).`)
       }
 
       // Começa quando o passo anterior TERMINA de percorrer os grupos (pior caso, com a
       // variação do intervalo) mais a pausa. A última execução dele é a que conta.
+      // Pausa menor que o ritmo do número vira o ritmo: o banco não deixaria a ação sair antes.
       const anterior = instantesPorPasso[i - 1]
       const inicioDele = anterior[anterior.length - 1]
-      const quando = inicioDele + duracaoMs + pausa * 60_000
+      const quando = inicioDele + duracaoMs + Math.max(pausa * 1000, pisoMs)
 
       instantesPorPasso.push([quando])
       // Guardado como atraso a partir do início, só para a lista mostrar "N depois do início".
@@ -398,7 +424,7 @@ export function avaliarAgendamento(
   if (janela) return janela
 
   // Sobreposição sobre o CONJUNTO: passos diferentes na mesma hora também disputam o número.
-  const folga = conferirSobreposicao(todos, duracaoMs)
+  const folga = conferirSobreposicao(todos, duracaoMs, pisoMs)
   if (folga) return folga
 
   const nome = typeof pedido.name === 'string' ? pedido.name.trim().slice(0, 120) : ''

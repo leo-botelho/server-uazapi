@@ -29,6 +29,15 @@ export const MINUTOS_POR_UNIDADE: Record<UnidadeDeAtraso, number> = { min: 1, h:
 
 export const ROTULO_DA_UNIDADE: Record<UnidadeDeAtraso, string> = { min: 'minutos', h: 'horas', d: 'dias' }
 
+/** A pausa entre passos aceita segundos: o agendador junta passos próximos numa passada só. */
+export type UnidadeDaPausa = 's' | UnidadeDeAtraso
+
+export const SEGUNDOS_POR_UNIDADE: Record<UnidadeDaPausa, number> = { s: 1, min: 60, h: 3600, d: 86_400 }
+
+export const ROTULO_DA_UNIDADE_DA_PAUSA: Record<UnidadeDaPausa, string> = {
+  s: 'segundos', min: 'minutos', h: 'horas', d: 'dias',
+}
+
 export interface PassoDaTela {
   /** Identidade estável na lista (a posição muda quando um passo é removido). */
   chave: string
@@ -48,9 +57,9 @@ export interface PassoDaTela {
   datas: (string | null)[]
   atraso: number | ''
   unidade: UnidadeDeAtraso
-  /** Pausa depois do passo anterior (`apos`). */
+  /** Pausa depois do passo anterior (`apos`). Vazio = o mínimo (o ritmo do número). */
   pausa: number | ''
-  unidadeDaPausa: UnidadeDeAtraso
+  unidadeDaPausa: UnidadeDaPausa
 }
 
 let contador = 0
@@ -69,8 +78,8 @@ export function passoVazio(quando: 'datas' | 'apos' = 'datas'): PassoDaTela {
     datas: [null],
     atraso: '',
     unidade: 'd',
-    pausa: 1,
-    unidadeDaPausa: 'min',
+    pausa: '',
+    unidadeDaPausa: 's',
   }
 }
 
@@ -92,11 +101,15 @@ export function atrasoEmMinutos(p: Pick<PassoDaTela, 'atraso' | 'unidade'>): num
   return minutos <= MAX_ATRASO_RELATIVO_MIN ? minutos : null
 }
 
-/** A pausa em minutos (mínimo 1: o agendador roda a cada minuto), ou null se inválida. */
-export function pausaEmMinutos(p: Pick<PassoDaTela, 'pausa' | 'unidadeDaPausa'>): number | null {
-  if (p.pausa === '' || !Number.isFinite(p.pausa) || !Number.isInteger(p.pausa) || p.pausa < 1) return null
-  const minutos = p.pausa * MINUTOS_POR_UNIDADE[p.unidadeDaPausa]
-  return minutos <= MAX_ATRASO_RELATIVO_MIN ? minutos : null
+/**
+ * A pausa em segundos, ou null se inválida. Vazio vale 0 = "o mínimo": quem fixa o
+ * piso de verdade é o servidor (o ritmo do número), que a tela não precisa repetir.
+ */
+export function pausaEmSegundos(p: Pick<PassoDaTela, 'pausa' | 'unidadeDaPausa'>): number | null {
+  if (p.pausa === '') return 0
+  if (!Number.isFinite(p.pausa) || !Number.isInteger(p.pausa) || p.pausa < 0) return null
+  const segundos = p.pausa * SEGUNDOS_POR_UNIDADE[p.unidadeDaPausa]
+  return segundos <= MAX_ATRASO_RELATIVO_MIN * 60 ? segundos : null
 }
 
 /** O modo que vale para o passo: o primeiro sempre usa data fixa, é ele que ancora. */
@@ -134,7 +147,7 @@ export function motivoDoPasso(p: PassoDaTela, indice: number): string | null {
     return atrasoEmMinutos(p) === null ? 'informe quanto tempo depois do início.' : null
   }
   if (quando === 'apos') {
-    return pausaEmMinutos(p) === null ? 'informe a pausa depois do passo anterior (mínimo 1 minuto).' : null
+    return pausaEmSegundos(p) === null ? 'a pausa depois do passo anterior é inválida (deixe vazio para o mínimo).' : null
   }
 
   if (p.datas.length === 0 || p.datas.some((d) => d === null)) return 'escolha a data e a hora.'
@@ -154,7 +167,7 @@ export function passoParaApi(p: PassoDaTela, indice: number): Record<string, unk
 
   const quando = quandoEfetivo(p, indice)
   if (quando === 'depois') return { ...conteudo, offsetMinutos: atrasoEmMinutos(p) }
-  if (quando === 'apos') return { ...conteudo, aposAnteriorMin: pausaEmMinutos(p) }
+  if (quando === 'apos') return { ...conteudo, aposAnteriorSeg: pausaEmSegundos(p) }
   return { ...conteudo, datas: p.datas.filter((d): d is string => d !== null) }
 }
 

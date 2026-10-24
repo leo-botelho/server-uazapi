@@ -300,7 +300,7 @@ export function AgendaList({ instanceId }: { instanceId: string }) {
                       onClick={() => setAberta(expandida ? null : o.id)}
                     >
                       {expandida ? <ChevronDown className="size-4 shrink-0" aria-hidden /> : <ChevronRight className="size-4 shrink-0" aria-hidden />}
-                      <span className="font-medium">{formatarEmBrasilia(o.run_at)}</span>
+                      <span className="font-medium">{formatarEmBrasilia(o.run_at, true)}</span>
                       {t.passos.length > 1 && passo && (
                         <span className="min-w-0 truncate text-muted-foreground">
                           Passo {passo.step_order + 1} · {resumo(passo)}

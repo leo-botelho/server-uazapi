@@ -910,8 +910,12 @@ export type Database = {
         Args: { p_run: string; p_include_uncertain?: boolean }
         Returns: number
       }
+      /**
+       * Abre as ocorrências vencidas — e, com `p_horizon_seconds` (migration 018), as que
+       * vencem nos próximos segundos, para passos seguidos não esperarem o minuto seguinte.
+       */
       open_due_group_runs: {
-        Args: Record<string, never>
+        Args: { p_horizon_seconds?: number }
         Returns: number
       }
       /** Devolve à fila os items cujo lease venceu. Após 3 tentativas, falha. */

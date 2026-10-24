@@ -118,7 +118,7 @@ export function DateTimeField({
  * separado `@date-fns/tz` — que não está instalado. O `Intl` nativo resolve
  * sem dependência nenhuma.
  */
-export function formatarEmBrasilia(iso: string | null | undefined): string {
+export function formatarEmBrasilia(iso: string | null | undefined, comSegundos = false): string {
   if (!iso) return "—"
 
   const d = new Date(iso)
@@ -127,7 +127,7 @@ export function formatarEmBrasilia(iso: string | null | undefined): string {
   return new Intl.DateTimeFormat("pt-BR", {
     timeZone: "America/Sao_Paulo",
     dateStyle: "short",
-    timeStyle: "short",
+    timeStyle: comSegundos ? "medium" : "short",
   }).format(d)
 }
 

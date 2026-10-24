@@ -10,10 +10,11 @@ import { DateTimeField, formatarEmBrasilia } from '@/components/ui/datetime-fiel
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { MAX_DATAS_POR_PASSO, MAX_PASSOS } from '@/lib/groups/agenda'
+import { MAX_DATAS_POR_PASSO, MAX_PASSOS, pisoEntreAcoesMs } from '@/lib/groups/agenda'
 import {
-  MINUTOS_POR_UNIDADE, ROTULO_DA_ACAO, ROTULO_DA_UNIDADE, atrasoEmMinutos, motivoDoPasso, passoVazio, quandoEfetivo,
-  type AcaoAgendada, type PassoDaTela, type UnidadeDeAtraso,
+  MINUTOS_POR_UNIDADE, ROTULO_DA_ACAO, ROTULO_DA_UNIDADE, ROTULO_DA_UNIDADE_DA_PAUSA, SEGUNDOS_POR_UNIDADE,
+  atrasoEmMinutos, motivoDoPasso, passoVazio, quandoEfetivo,
+  type AcaoAgendada, type PassoDaTela, type UnidadeDaPausa, type UnidadeDeAtraso,
 } from '@/lib/groups/agenda-tela'
 import { MAX_DESCRICAO_DO_GRUPO, MAX_NOME_DO_GRUPO } from '@/lib/groups/gestao'
 import { prepararFotoDeGrupo } from '@/lib/image-client'
@@ -87,9 +88,11 @@ function FotoDoPasso({
 }
 
 function QuandoDoPasso({
-  indice, passo, inicio, aoMudar, disabled,
+  indice, passo, inicio, pisoS, aoMudar, disabled,
 }: {
   indice: number
+  /** A menor pausa possível: o ritmo do número (o "Intervalo entre grupos" sem a variação). */
+  pisoS: number
   passo: PassoDaTela
   /** A primeira data do primeiro passo, quando já escolhida: a âncora das sequências. */
   inicio: string | null
@@ -124,25 +127,28 @@ function QuandoDoPasso({
             <span className="text-sm text-muted-foreground">Pausa de</span>
             <Input
               type="number"
-              min={1}
+              min={0}
               inputMode="numeric"
               className="w-24"
               aria-label="Pausa depois do passo anterior"
+              placeholder={String(pisoS)}
               value={passo.pausa}
               disabled={disabled}
               onChange={(e) => aoMudar({ pausa: e.target.value === '' ? '' : Number(e.target.value) })}
             />
             <div className="flex gap-1" role="group" aria-label="Unidade da pausa">
-              {(Object.keys(MINUTOS_POR_UNIDADE) as UnidadeDeAtraso[]).map((u) => (
+              {(Object.keys(SEGUNDOS_POR_UNIDADE) as UnidadeDaPausa[]).map((u) => (
                 <Button key={u} type="button" size="sm" variant={passo.unidadeDaPausa === u ? 'default' : 'outline'} aria-pressed={passo.unidadeDaPausa === u} disabled={disabled} onClick={() => aoMudar({ unidadeDaPausa: u })}>
-                  {ROTULO_DA_UNIDADE[u]}
+                  {ROTULO_DA_UNIDADE_DA_PAUSA[u]}
                 </Button>
               ))}
             </div>
           </div>
           <p className="text-xs text-muted-foreground">
-            Começa quando o passo anterior terminar de percorrer todos os grupos, mais esta pausa. O horário exato
-            aparece em “O que vai acontecer”. O painel confere a fila a cada minuto, então a pausa mínima é de 1 minuto.
+            Começa quando o passo anterior terminar de percorrer todos os grupos, mais esta pausa. Vazio usa o mínimo,
+            de {pisoS} s: é o ritmo do número (o “Intervalo entre grupos”, sem a variação), e nenhuma ação sai antes disso.
+            Para pausas menores, diminua o intervalo entre grupos (mínimo de 5 s; marcando todos, 60 s).
+            O horário exato aparece em “O que vai acontecer”.
           </p>
         </div>
       ) : quando === 'depois' ? (
@@ -207,9 +213,11 @@ function QuandoDoPasso({
  * na quinta", ou uma sequência (hoje, daqui a 2 dias, daqui a 5).
  */
 export function ScheduleComposer({
-  instanceId, nome, aoMudarNome, passos, aoMudarPassos, cronograma, disabled,
+  instanceId, nome, aoMudarNome, passos, aoMudarPassos, cronograma, espacamentoS, jitterPct, disabled,
 }: {
   instanceId: string
+  espacamentoS: number
+  jitterPct: number
   nome: string
   aoMudarNome: (nome: string) => void
   passos: PassoDaTela[]
@@ -300,7 +308,7 @@ export function ScheduleComposer({
               <FotoDoPasso instanceId={instanceId} passo={passo} aoMudar={(p) => mudar(i, p)} disabled={disabled} />
             )}
 
-            <QuandoDoPasso indice={i} passo={passo} inicio={inicio} aoMudar={(p) => mudar(i, p)} disabled={disabled} />
+            <QuandoDoPasso indice={i} passo={passo} inicio={inicio} pisoS={pisoEntreAcoesMs(espacamentoS, jitterPct) / 1000} aoMudar={(p) => mudar(i, p)} disabled={disabled} />
 
             {pendente && <p className="text-xs text-amber-400">Falta: {pendente}</p>}
           </section>
@@ -320,7 +328,7 @@ export function ScheduleComposer({
           <ol className="space-y-1 text-sm text-muted-foreground">
             {cronograma.map((e, i) => (
               <li key={i}>
-                <span className="text-foreground">{formatarEmBrasilia(e.quando)}</span> — passo {e.passo}
+                <span className="text-foreground">{formatarEmBrasilia(e.quando, true)}</span> — passo {e.passo}
               </li>
             ))}
           </ol>

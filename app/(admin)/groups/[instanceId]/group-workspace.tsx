@@ -367,6 +367,8 @@ export function GroupWorkspace({ instanceId, instanceName, grupos, precisaAtuali
                 passos={passos}
                 aoMudarPassos={setPassos}
                 cronograma={avaliacao.cronograma}
+                espacamentoS={espacamentoEfetivo}
+                jitterPct={JITTER_PADRAO_PCT}
                 disabled={agendando}
               />
             ) : (
