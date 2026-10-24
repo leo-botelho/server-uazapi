@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { atualizarCacheComGrupo } from '@/lib/groups/cache'
-import { resumirParticipantes } from '@/lib/groups/gestao'
+import { lerSolicitacoes, resumirParticipantes } from '@/lib/groups/gestao'
 import { prepararMutacao, respostaDeErroDaUazapi } from '@/lib/groups/mutacao'
 
 /**
@@ -26,6 +26,8 @@ export async function POST(
     const grupo = await client.groups.info(token, {
       groupjid,
       getInviteLink: corpo.convite === true,
+      // Os pedidos de entrada só vêm quando a tela pede (a fila de aprovação): é uma consulta a mais.
+      getRequestsParticipants: corpo.solicitacoes === true,
       // `force`: a tela abre este grupo para AGIR sobre ele; uma cópia velha dos
       // participantes levaria a remover quem já saiu ou a perder quem entrou.
       force: true,
@@ -47,6 +49,7 @@ export async function POST(
         conviteDoGrupo: grupo.invite_link ?? null,
       },
       participantes: resumirParticipantes(grupo),
+      ...(corpo.solicitacoes === true ? { solicitacoes: lerSolicitacoes(grupo.request_participants) } : {}),
     })
   } catch (err) {
     return respostaDeErroDaUazapi(err, 'info')

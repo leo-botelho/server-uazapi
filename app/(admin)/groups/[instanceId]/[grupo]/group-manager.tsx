@@ -10,6 +10,7 @@ import { InfoSection } from './info-section'
 import { InviteSection } from './invite-section'
 import { ParticipantsSection } from './participants-section'
 import { SettingsSection } from './settings-section'
+import { SolicitacoesSection } from './solicitacoes-section'
 import type { InfoViva } from './tipos'
 import { chamarApi, rotaDoGrupo } from '@/components/admin/groups/chamar-api'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -94,6 +95,7 @@ export function GroupManager({
           <div className="space-y-6">
             <ParticipantsSection {...comum} participantes={viva.participantes} />
             <BulkRemove {...comum} participantes={viva.participantes} />
+            <SolicitacoesSection {...comum} exigeAprovacao={viva.grupo.aprovacaoParaEntrar} />
             <BoasVindasSection {...comum} />
             <DangerSection
               instanceId={instanceId}

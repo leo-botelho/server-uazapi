@@ -5,6 +5,37 @@ Registrar aqui toda implementação, fix e decisão técnica relevante ao final 
 
 ---
 
+## 2026-10-24 — Fila de aprovacao de entrada (fase 6, parcial). Sem migration.
+
+Em grupo que exige aprovacao, quem pediu para entrar fica esperando um admin. Nova secao "Pedidos de entrada" na pagina
+do grupo: **Ver pedidos pendentes** (lido AO VIVO so quando a pessoa pede — e uma consulta a mais, e telefone e dado
+pessoal: nao fica guardado), selecionar, **Aprovar** ou **Rejeitar**.
+
+- A spec documenta `updateParticipants` com `approve`/`reject` e `request_participants` como STRING separada por virgula
+  (nao array). `lerSolicitacoes` aceita JID ou telefone puro, tira sufixo de dispositivo e repeticao; em `@lid` o
+  identificador e opaco e NAO vira telefone ("Numero oculto pelo WhatsApp"). Nunca lanca com valor inesperado.
+- A rota `groups/participants` ganhou `approve`/`reject` e REBUSCA a fila ao vivo antes de agir (`getRequestsParticipants`):
+  quem outro admin ja decidiu, ou desistiu, vira "ja decidido" (`naoEstao`), nao erro; a API recebe o id no formato que ELA
+  devolveu. Se a API nao devolver a lista, ninguem e aprovado (falha segura).
+- Lotes de ate 15, 5 s entre eles, para no primeiro erro, "Parar apos este lote". Confirmacao antes; acima de 30 pedidos
+  pede para DIGITAR a quantidade. Rejeitar e destrutivo (nao desfaz).
+- `groups/info` aceita `solicitacoes: true` (so a tela da fila pede; a carga normal da pagina nao paga a consulta a mais).
+- Defeito achado pelo teste e corrigido antes do commit: `planejarSolicitacoes` deduplicava pelo texto do pedido, entao a
+  mesma pessoa em tres formatos virava tres alvos. Agora deduplica pela pessoa.
+
+### Verificado
+- Regras: **20** (formatos, @lid, dedup, planejamento, lixo) + regressao das demais; `tsc` limpo.
+- Navegador (dados falsos): 20 pedidos (18 com telefone, 1 oculto, 1 so digitos) -> "Selecionar todos" -> confirmacao ->
+  2 lotes (15 + 5) com contagem regressiva, resultado mantido, fila recarregada vazia.
+- NAO verificado contra a uazapiGO real: se `request_participants` vem preenchido, em que formato, e se `approve`/`reject`
+  aceitam o id como a API devolveu. Testar num grupo de teste com "aprovar para entrar" ligado e um segundo numero.
+
+### Fica de fora (fase 6)
+**Etiquetas como alvo de campanha**: a spec tem `/chat/labels`, `/labels` e `/label/edit`, mas nao deixa claro como ler
+os rotulos de cada GRUPO de uma vez; construir sem isso seria palpite. Deixado para quando houver um teste real.
+
+---
+
 ## 2026-10-24 — Boas-vindas ao entrar no grupo (migration 021) — DESLIGADO ate o usuario assinar `groups`
 
 A spec da uazapiGO NAO documenta o formato do evento `groups` do webhook. Em vez de esperar, o recurso foi
@@ -201,8 +232,8 @@ Resumo para quem abrir o projeto agora. O detalhe tecnico de cada etapa esta nas
    (V7, nao verificado) — deixado de lado.
 7. FEITO nesta rodada: editar agendamento (nome, hora de uma execucao, texto de passo), exportar CSV, criar grupo,
    entrar por convite e comunidades. As rotas novas NUNCA rodaram contra a uazapiGO real: testar com grupo de teste.
-   Ainda de fora: editar midia/botoes/foto de um passo (cancela e cria de novo) e a fase 6 opcional (etiquetas como
-   alvo de campanha, fila de aprovacao de entrada).
+   FEITO tambem: fila de aprovacao de entrada (sem migration). Ainda de fora: editar midia/botoes/foto de um passo
+   (cancela e cria de novo) e etiquetas como alvo de campanha (a spec nao deixa claro como ler os rotulos de cada grupo).
 8. Nome de grupo acima de 25 caracteres: so aviso; **nao verificado** se a uazapiGO aceita renomear acima de
    25 (a spec documenta 25). Testar num grupo antes de aplicar em varios.
 

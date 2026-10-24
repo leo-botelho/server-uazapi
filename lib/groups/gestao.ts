@@ -295,3 +295,82 @@ export function resumirResultadoDoLote(
     falhas: atualizados.filter((u) => u.Error !== 0).map((u) => ({ jid: u.JID, codigo: u.Error })),
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fila de aprovação de entrada
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface Solicitacao {
+  /** EXATAMENTE como a uazapiGO devolveu: é o que se manda de volta ao aprovar ou rejeitar. */
+  id: string
+  /** Só dígitos, ou null quando o WhatsApp esconde o número (identificador `@lid`). */
+  telefone: string | null
+}
+
+/**
+ * Chave para comparar dois jeitos de escrever a mesma pessoa: sem sufixo de dispositivo, e
+ * telefone puro igual ao JID dele. Minúsculas.
+ */
+export function chaveDaSolicitacao(id: string): string {
+  const t = id.trim().toLowerCase().replace(/:\d+@/, '@')
+  return /^\d+$/.test(t) ? `${t}@s.whatsapp.net` : t
+}
+
+/**
+ * Lê `request_participants` — uma STRING separada por vírgula, não um array. Cada item pode
+ * vir como JID ou como telefone; a leitura aceita os dois, sem repetição, e nunca lança.
+ * Em `@lid` o identificador é opaco: não vira telefone (casaria a pessoa errada).
+ */
+export function lerSolicitacoes(bruto: unknown): Solicitacao[] {
+  if (typeof bruto !== 'string') return []
+
+  const vistos = new Set<string>()
+  const lista: Solicitacao[] = []
+
+  for (const parte of bruto.split(',')) {
+    const id = parte.trim()
+    if (!id) continue
+
+    const chave = chaveDaSolicitacao(id)
+    if (vistos.has(chave)) continue
+    vistos.add(chave)
+
+    const semDominio = id.split('@')[0]?.split(':')[0] ?? ''
+    const digitos = semDominio.replace(/\D/g, '')
+    const oculto = chave.endsWith('@lid')
+
+    lista.push({ id, telefone: !oculto && digitos.length >= 8 ? digitos : null })
+  }
+
+  return lista
+}
+
+/**
+ * Quais dos pedidos de ação ainda estão MESMO pendentes. Quem já foi aprovado por outro admin,
+ * ou desistiu, vira `naoEstao` em vez de erro. `alvos` leva o `id` ORIGINAL da fila, não o que
+ * veio no pedido: assim a API recebe exatamente o formato que ela mesma devolveu.
+ */
+export function planejarSolicitacoes(
+  pendentes: Solicitacao[],
+  pedidos: string[]
+): { alvos: string[]; naoEstao: string[] } {
+  const porChave = new Map(pendentes.map((p) => [chaveDaSolicitacao(p.id), p.id]))
+  const alvos: string[] = []
+  const naoEstao: string[] = []
+
+  // Deduplica pela PESSOA (o id da fila), não pelo texto do pedido: três formas de escrever o
+  // mesmo número seriam três alvos, e a API receberia a mesma pessoa repetida.
+  const jaEscolhidos = new Set<string>()
+
+  for (const pedido of new Set(pedidos)) {
+    const original = porChave.get(chaveDaSolicitacao(pedido))
+
+    if (!original) naoEstao.push(pedido)
+    else if (!jaEscolhidos.has(original)) {
+      jaEscolhidos.add(original)
+      alvos.push(original)
+    }
+  }
+
+  return { alvos, naoEstao }
+}

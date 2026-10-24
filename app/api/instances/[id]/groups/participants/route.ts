@@ -2,15 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { atualizarCacheComGrupo } from '@/lib/groups/cache'
 import {
-  LOTE_DE_PARTICIPANTES, resumirParticipantes, resumirResultadoDoLote,
+  LOTE_DE_PARTICIPANTES, lerSolicitacoes, planejarSolicitacoes, resumirParticipantes, resumirResultadoDoLote,
 } from '@/lib/groups/gestao'
 import { prepararMutacao, respostaDeErroDaUazapi } from '@/lib/groups/mutacao'
 import type { UazapiParticipantAction } from '@/lib/uazapi/group-types'
 
 /**
- * POST /api/instances/[id]/groups/participants — remove, promove, rebaixa ou adiciona.
+ * POST /api/instances/[id]/groups/participants — remove, promove, rebaixa, adiciona, aprova ou rejeita.
  *
- * Corpo: `{ groupjid, acao: 'remove'|'promote'|'demote'|'add', participantes: string[],
+ * Corpo: `{ groupjid, acao: 'remove'|'promote'|'demote'|'add'|'approve'|'reject', participantes: string[],
  * incluirAdmins?: boolean }`. Exige admin. UM lote por chamada (até 15): quem
  * percorre os lotes, com a espera entre eles, é a tela.
  *
@@ -26,7 +26,7 @@ import type { UazapiParticipantAction } from '@/lib/uazapi/group-types'
  * automação para o WhatsApp.
  */
 
-const ACOES = ['remove', 'promote', 'demote', 'add'] as const
+const ACOES = ['remove', 'promote', 'demote', 'add', 'approve', 'reject'] as const
 type Acao = (typeof ACOES)[number]
 
 const ehJid = (v: string) => /^[0-9a-zA-Z:.-]+@(s\.whatsapp\.net|lid)$/.test(v)
@@ -42,7 +42,7 @@ export async function POST(
 
   const acao = corpo.acao as Acao
   if (!ACOES.includes(acao)) {
-    return NextResponse.json({ error: 'Escolha a ação: remover, promover, rebaixar ou adicionar.' }, { status: 400 })
+    return NextResponse.json({ error: 'Escolha a ação: remover, promover, rebaixar, adicionar, aprovar ou rejeitar.' }, { status: 400 })
   }
 
   const lista = corpo.participantes
@@ -63,6 +63,11 @@ export async function POST(
     if (!pedidos.every((p) => /^\d{8,15}$/.test(p))) {
       return NextResponse.json({ error: 'Para adicionar, informe só os dígitos do telefone, com o código do país.' }, { status: 400 })
     }
+  } else if (acao === 'approve' || acao === 'reject') {
+    // Os pedidos de entrada podem vir como JID ou como telefone puro (a API devolve dos dois jeitos).
+    if (!pedidos.every((p) => ehJid(p) || /^\d{8,15}$/.test(p))) {
+      return NextResponse.json({ error: 'Pedido de entrada inválido.' }, { status: 400 })
+    }
   } else if (!pedidos.every(ehJid)) {
     return NextResponse.json({ error: 'Participante inválido.' }, { status: 400 })
   }
@@ -72,7 +77,14 @@ export async function POST(
     const protegidos: string[] = []
     const naoEstao: string[] = []
 
-    if (acao !== 'add') {
+    if (acao === 'approve' || acao === 'reject') {
+      // A fila é REBUSCADA ao vivo: outro admin pode ter decidido, ou a pessoa desistido. Quem não
+      // está mais lá vira `naoEstao` em vez de erro, e a API recebe o id no formato que ELA devolveu.
+      const grupo = await client.groups.info(token, { groupjid, force: true, getRequestsParticipants: true })
+      const plano = planejarSolicitacoes(lerSolicitacoes(grupo.request_participants), pedidos)
+      alvos = plano.alvos
+      naoEstao.push(...plano.naoEstao)
+    } else if (acao !== 'add') {
       const grupo = await client.groups.info(token, { groupjid, force: true })
       const roster = new Map(resumirParticipantes(grupo).map((p) => [p.jid, p]))
 
