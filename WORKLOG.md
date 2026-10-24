@@ -5,6 +5,84 @@ Registrar aqui toda implementação, fix e decisão técnica relevante ao final 
 
 ---
 
+## 2026-10-24 — Modulo de grupos: ESTADO ATUAL, PENDENCIAS E LINHA DO TEMPO (leia primeiro)
+
+Resumo para quem abrir o projeto agora. O detalhe tecnico de cada etapa esta nas entradas abaixo.
+
+### Linha do tempo (commits em main)
+| Commit | O que |
+|---|---|
+| 4be19ae | fase 2 — gestao de um grupo |
+| cf76e8d | fase 3 — agendador (migration 016, worker `groups-runner`, pagina Agendamentos) |
+| fb9f969 | fase 4 — varios passos, varias datas, sequencias |
+| 44c34b2 | fase 5 (parcial) — links curtos `/l/<slug>` (migration 017) + amostra do evento `groups` |
+| 5cf8bb4 | intervalo entre passos ("logo depois do anterior") + motivo do botao Agendar apagado |
+| ea762d9 | pausa em segundos (migration 018) |
+| 96a6e0e | motivo do botao Enviar apagado + nome acima de 25 caracteres vira aviso |
+| c0098f6 | modo avancado de marcar todos (migration 019) |
+
+### Migrations — o que o usuario aplicou (SQL Editor, a mao)
+- **015, 016, 017: aplicadas** (confirmado pelo usuario: "ja rodei as migrations", logo depois da entrega
+  da 016/017).
+- **018 e 019: NAO confirmadas.** Foram criadas depois dessa confirmacao. Sem a 018 tudo funciona, mas cada
+  passo espera o minuto seguinte (a pausa de segundos so vale com ela). Sem a 019, marcar todos abaixo de
+  60 s no modo avancado responde 503 pedindo para aplica-la; acima de 10 grupos a 60 s funciona sem ela.
+- Todas sao idempotentes e trazem `-- rollback:` no cabecalho. Numeracao: as boas-vindas (antes previstas
+  como 017) ficam para a **020** em diante.
+
+### Operacional (feito fora do codigo)
+- **Secret `GROUPS_RUNNER_SECRET` criado no GitHub** por mim, a pedido e com autorizacao do usuario
+  (`openssl rand -hex 32 | gh secret set`; o valor NAO foi exibido nem guardado). Deploy manual disparado
+  (workflow `deploy.yml`, run 40084417264) e o passo "Deploy do agendador de grupos" instalou o worker
+  `server-uazapi-groups-runner` (cron a cada minuto) e os 3 secrets dele. Antes disso o passo so emitia
+  `::warning::` (por desenho, para nunca derrubar o deploy do monitor).
+- Verificado depois: `POST /api/groups/scheduler/tick` sem credencial responde 401 (e nao 503, entao o
+  secret chegou ao app); `/l/<inexistente>` responde 404.
+- Como disparar o agendador na mao para testar: `GET <url do worker>?force=1` (chama o tick sem a consulta
+  previa ao banco). A URL `*.workers.dev` do worker nao foi anotada; ver o painel do Cloudflare.
+
+### Decisoes do usuario nesta rodada (para nao serem refeitas)
+- "Trava com aviso" (inicio do projeto) continua valendo como principio: protecao ligada por padrao,
+  liberavel com confirmacao explicita. Foi assim que marcar todos ganhou o **modo avancado**.
+- O usuario opera no **n8n com mais de 10 grupos, marcando todos, a 5 s entre grupos, sem nunca ter tido
+  problema**. Isso motivou: pausa entre passos em segundos, modo avancado e nome acima de 25 caracteres.
+  E experiencia dele, nao algo que eu tenha verificado.
+- Quer poder usar intervalo curto: o piso geral e 5 s (banco) e a variacao de +-20% e fixa.
+- Quer ver o MOTIVO quando um botao esta apagado (duas vezes isso travou o uso real): regra para toda tela
+  nova — motivo em alerta visivel, nunca so em texto cinza pequeno.
+
+### Pendencias (em ordem de importancia)
+1. **Primeiro teste real do agendador** (nunca rodou contra Supabase/uazapi/Cloudflare reais): agendar uma
+   mensagem simples para 1 grupo de teste, daqui a ~3 min; conferir que chegou e que a tela de Agendamentos
+   mostra "Concluida". Depois testar nome -> descricao -> mensagem com 1 grupo e intervalo de 5 s.
+2. Aplicar a **018** e a **019** no Supabase.
+3. **Medir CPU no plano Free** (Workers metrics) depois do primeiro agendamento: 5 itens por passada e
+   estimativa. Se passar de 10 ms, reduzir `MAX_ITENS_POR_PASSADA` em `lib/groups/scheduler-regras.ts`.
+4. Testar links curtos em celular real (heuristica de abrir o app) e conferir que a previa do WhatsApp
+   NAO conta clique. Aplicar a 017 ja foi feito.
+5. **Boas-vindas** (decisao do usuario): assinar `groups` no webhook GLOBAL (Configuracoes; nunca no webhook
+   por instancia, que e do n8n), entrar/sair de um grupo de teste e colar a linha "amostra do evento groups"
+   do log; so entao escrever o tratador + migration 020 (regras por grupo, anti-duplicata). Atencao: aumenta
+   o volume do webhook — assinar numa janela curta e olhar o CPU.
+6. Enquetes: acompanhamento do envio ja aparece em Agendamentos; ler votos depende de `POST /message/find`
+   (V7, nao verificado) — deixado de lado.
+7. Sem edicao de agendamento depois de criado (cancela e cria de novo); sem criar grupo / entrar por convite /
+   comunidades / exportar CSV (fase 2 deixou de fora; fase 6 do plano).
+8. Nome de grupo acima de 25 caracteres: so aviso; **nao verificado** se a uazapiGO aceita renomear acima de
+   25 (a spec documenta 25). Testar num grupo antes de aplicar em varios.
+
+### Lembretes tecnicos que custaram caro
+- Toda rota de admin nova precisa entrar em `ADMIN_ROUTES` do `middleware.ts` (`/groups` ja esta).
+- Migrations sao aplicadas a mao: codigo que usa coluna/tabela/funcao nova ANTES da migration quebra em
+  silencio. Cada recurso novo deve ter guarda que explica (ver `lib/groups/install.ts`).
+- Heredoc longo no shell desta maquina falha com "unexpected EOF": escrever o script com a ferramenta de
+  arquivo e rodar `python arquivo.py`.
+- Servidor de dev (Turbopack) demora ~100 s na primeira rota e, as vezes, nao responde por minutos: aquecer
+  com `curl --max-time 90` em laco antes de abrir no navegador. `.env.local` e `app/preview-*` usados para
+  conferir telas sao TEMPORARIOS e foram removidos antes de cada commit.
+
+---
+
 ## 2026-10-24 — Marcar todos: modo avancado (mais de 10 grupos, intervalo a partir de 5 s) — migration 019
 
 O usuario opera no n8n com mais de 10 grupos, marcando todos, a 5 s entre grupos, "sem nunca ter
