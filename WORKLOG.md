@@ -5,6 +5,40 @@ Registrar aqui toda implementação, fix e decisão técnica relevante ao final 
 
 ---
 
+## 2026-10-24 — Etiquetas (labels) como alvo de campanha. Sem migration. Migration 018 confirmada como aplicada.
+
+Fecha o item que tinha ficado de fora da fase 6. A duvida que bloqueava ("como ler os rotulos de cada GRUPO de uma vez")
+tinha resposta na spec: `POST /chat/find` aceita `wa_label` (o ID da etiqueta, "nao o nome") junto de `wa_isGroup`.
+
+### O que entrou (painel "Etiquetas" na tela de grupos, fechado por padrao)
+- **Selecionar os grupos de uma etiqueta**: uma consulta (`chat/find` com `wa_isGroup` + `wa_label`, paginada em 200 ate
+  1000, com teto — nunca laco infinito) e a selecao da tela passa a ser esses grupos. Conversa individual com a mesma
+  etiqueta NUNCA entra (o JID e conferido). Grupo com a etiqueta que nao esta no cache vira aviso ("use Atualizar
+  lista"), nao e inventado.
+- **Aplicar / remover a etiqueta nos selecionados**: UM grupo por pedido (`POST /chat/labels`, `number` aceita grupo),
+  pausa de 1,5 s, confirmacao antes, para no primeiro erro dizendo quantos ja tinham sido feitos. Nenhuma mensagem e
+  enviada.
+- **Gerenciar**: criar (nome + 1 das 20 cores), renomear/recolorir e apagar. **Apagar tira a etiqueta de TODAS as
+  conversas do numero** (nao so dos grupos): a rota exige `confirmar: true` e a tela exige digitar o nome da etiqueta.
+- As etiquetas sao lidas AO VIVO e so quando o painel e aberto: abrir a pagina nao faz nenhuma chamada a mais.
+- Etiqueta e recurso do WhatsApp Business: em numero comum a lista falha e a tela explica isso (com "Tentar de novo")
+  em vez de fingir que nao ha etiquetas.
+
+### Cuidados com a spec inconsistente
+O ID da etiqueta aparece como `id` (schema, que diz "uuid") e como `labelid` (edicao). `lerEtiquetas` aceita `id`,
+`labelid`, `labelId`, `ID`, numero ou texto; so deixa passar ID com letras/numeros/`_`/`-` (nunca vai parar num corpo de
+requisicao), e "new" nunca e um ID real (e o marcador de criacao da propria API).
+
+### Verificado
+- Regras: **30** (leitura tolerante, IDs perigosos, ordem em portugues, nome/cor, grupos da busca, cruzar com a lista).
+  `tsc` limpo. Navegador (dados falsos): abre sem chamar nada, lista, seleciona pela etiqueta (2 de 3 + aviso do grupo
+  fora da lista), aplica parando no erro do 3o grupo, cria com a cor certa, apagar travado ate digitar o nome, e o caso
+  de numero sem etiquetas.
+- NAO verificado contra a uazapiGO real: se `wa_label` filtra de fato por ID, se `/chat/labels` aceita um JID de grupo
+  (a spec diz "numero do chat ou grupo"), e o formato exato de `GET /labels`. Testar com 1 etiqueta e 1 grupo de teste.
+
+---
+
 ## 2026-10-24 — Fila de aprovacao de entrada (fase 6, parcial). Sem migration.
 
 Em grupo que exige aprovacao, quem pediu para entrar fica esperando um admin. Nova secao "Pedidos de entrada" na pagina
@@ -187,7 +221,7 @@ Resumo para quem abrir o projeto agora. O detalhe tecnico de cada etapa esta nas
 - **019: aplicada** (confirmado pelo usuario em 2026-10-24). O usuario disse depois "ja rodei todas as migrations":
   vale para ate a 019. **020 (editar texto de passo) e 021 (boas-vindas): aplicadas** (confirmado pelo usuario
   em 2026-10-24, depois da entrega). **Ainda a confirmar: a 018** (pausa de segundos entre passos) — o usuario disse
-  "todas", mas ela nao foi citada nominalmente; se a pausa entre passos continuar em ~1 min, e ela que falta.
+  "todas"; **CONFIRMADA depois, nominalmente ("incluindo a 18")**. Todas as migrations (015 a 021) estao aplicadas.
 - **018: NAO confirmada.** Foi criada depois da primeira confirmacao e o usuario so citou a 019. Sem a 018 tudo funciona, mas cada
   passo espera o minuto seguinte (a pausa de segundos so vale com ela). (Sem a 019, marcar todos abaixo de 60 s no modo
   avancado respondia 503 pedindo para aplica-la; agora aplicada, isso nao ocorre.)
@@ -232,8 +266,8 @@ Resumo para quem abrir o projeto agora. O detalhe tecnico de cada etapa esta nas
    (V7, nao verificado) — deixado de lado.
 7. FEITO nesta rodada: editar agendamento (nome, hora de uma execucao, texto de passo), exportar CSV, criar grupo,
    entrar por convite e comunidades. As rotas novas NUNCA rodaram contra a uazapiGO real: testar com grupo de teste.
-   FEITO tambem: fila de aprovacao de entrada (sem migration). Ainda de fora: editar midia/botoes/foto de um passo
-   (cancela e cria de novo) e etiquetas como alvo de campanha (a spec nao deixa claro como ler os rotulos de cada grupo).
+   FEITO tambem: fila de aprovacao de entrada e etiquetas (sem migration). Ainda de fora: editar midia/botoes/foto de um
+   passo (cancela e cria de novo) e a ENQUETE (deixada de lado a pedido do usuario).
 8. Nome de grupo acima de 25 caracteres: so aviso; **nao verificado** se a uazapiGO aceita renomear acima de
    25 (a spec documenta 25). Testar num grupo antes de aplicar em varios.
 

@@ -431,6 +431,8 @@ function createUazapiClient(baseUrl: string, defaultAdminToken: string) {
         offset?: number
         wa_isGroup?: boolean
         wa_isGroup_admin?: boolean
+        /** ID da etiqueta aplicada ao chat — o de `/labels`, não o nome. */
+        wa_label?: string
         search?: string
       }) =>
         request<UazapiChatFindPage>('/chat/find', {
@@ -503,6 +505,30 @@ function createUazapiClient(baseUrl: string, defaultAdminToken: string) {
         delay?: number
       }) =>
         request<UazapiSendResult>('/send/menu', {
+          method: 'POST', token, body: JSON.stringify(body),
+        }),
+    },
+
+    /**
+     * Etiquetas do WhatsApp Business. ⚠️ O ID aparece como `id` (schema) e como `labelid` (edição):
+     * quem lê a resposta usa `lerEtiquetas()` em `lib/groups/etiquetas.ts`, que aceita os dois.
+     */
+    labels: {
+      /** GET /labels. */
+      list: (token: string) => request<unknown>('/labels', { token }),
+
+      /**
+       * POST /label/edit. `labelid: 'new'` cria; um ID real edita; `delete: true` apaga.
+       * ⚠️ Apagar tira a etiqueta de TODAS as conversas da instância.
+       */
+      edit: (token: string, body: { labelid: string; name?: string; color?: number; delete?: boolean }) =>
+        request<{ response?: string }>('/label/edit', {
+          method: 'POST', token, body: JSON.stringify(body),
+        }),
+
+      /** POST /chat/labels. Use UM dos três campos de etiqueta por pedido; `number` aceita JID de grupo. */
+      setChat: (token: string, body: { number: string; add_labelid?: string; remove_labelid?: string }) =>
+        request<unknown>('/chat/labels', {
           method: 'POST', token, body: JSON.stringify(body),
         }),
     },

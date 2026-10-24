@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { CalendarClock, OctagonAlert, RefreshCw, Send, TriangleAlert } from 'lucide-react'
 
 import { DispatchProgress } from './dispatch-progress'
+import { EtiquetasPanel } from './etiquetas-panel'
 import { ExportButtons } from './export-buttons'
 import { GroupList } from './group-list'
 import { ScheduleComposer, type ExecucaoPrevista } from './schedule-composer'
@@ -302,6 +303,13 @@ export function GroupWorkspace({ instanceId, instanceName, grupos, precisaAtuali
         </div>
 
         <ExportButtons instanceId={instanceId} nomes={nomes} selecionados={alvos} />
+
+        <EtiquetasPanel
+          instanceId={instanceId}
+          conhecidos={jidsValidos}
+          selecionados={alvos}
+          aoSelecionarVarios={(jids) => setSelecionados(new Set(jids))}
+        />
 
         <GroupList
           instanceId={instanceId}
