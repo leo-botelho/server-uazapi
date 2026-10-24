@@ -148,13 +148,15 @@ Resumo para quem abrir o projeto agora. O detalhe tecnico de cada etapa esta nas
 | c0098f6 | modo avancado de marcar todos (migration 019) |
 | 130f35b | exportacao CSV, criar grupo, entrar por convite e comunidades |
 | 2476d47 | editar agendamento depois de criado (migration 020) |
-| (proximo) | boas-vindas ao entrar no grupo (migration 021) — desligado ate assinar `groups` |
+| b0e5dc3 | boas-vindas ao entrar no grupo (migration 021) — desligado ate assinar `groups` |
 
 ### Migrations — o que o usuario aplicou (SQL Editor, a mao)
 - **015, 016, 017: aplicadas** (confirmado pelo usuario: "ja rodei as migrations", logo depois da entrega
   da 016/017).
 - **019: aplicada** (confirmado pelo usuario em 2026-10-24). O usuario disse depois "ja rodei todas as migrations":
-  vale para ate a 019; **020 (editar texto de passo) e 021 (boas-vindas) foram criadas DEPOIS e NAO estao confirmadas.**
+  vale para ate a 019. **020 (editar texto de passo) e 021 (boas-vindas): aplicadas** (confirmado pelo usuario
+  em 2026-10-24, depois da entrega). **Ainda a confirmar: a 018** (pausa de segundos entre passos) — o usuario disse
+  "todas", mas ela nao foi citada nominalmente; se a pausa entre passos continuar em ~1 min, e ela que falta.
 - **018: NAO confirmada.** Foi criada depois da primeira confirmacao e o usuario so citou a 019. Sem a 018 tudo funciona, mas cada
   passo espera o minuto seguinte (a pausa de segundos so vale com ela). (Sem a 019, marcar todos abaixo de 60 s no modo
   avancado respondia 503 pedindo para aplica-la; agora aplicada, isso nao ocorre.)
