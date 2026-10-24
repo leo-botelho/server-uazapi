@@ -757,6 +757,54 @@ export type Database = {
         Relationships: []
       }
 
+      /** Regra de boas-vindas de um grupo (migration 021). Desligada por padrão. */
+      group_welcome_rules: {
+        Row: {
+          instance_id: string
+          group_jid: string
+          enabled: boolean
+          message: string
+          delay_seconds: number
+          updated_at: string
+        }
+        Insert: {
+          instance_id: string
+          group_jid: string
+          enabled?: boolean
+          message: string
+          delay_seconds?: number
+          updated_at?: string
+        }
+        Update: {
+          enabled?: boolean
+          message?: string
+          delay_seconds?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+
+      /** Quem já recebeu boas-vindas, por janela de 10 min: é o que torna a reentrega do webhook inofensiva. */
+      group_welcome_log: {
+        Row: {
+          id: number
+          instance_id: string
+          group_jid: string
+          participant_jid: string
+          bucket: number
+          task_id: string | null
+          created_at: string
+        }
+        Insert: {
+          instance_id: string
+          group_jid: string
+          participant_jid: string
+          bucket: number
+        }
+        Update: { task_id?: string | null }
+        Relationships: []
+      }
+
       /** Links curtos com contagem de cliques (migration 017): a página pública é /l/<slug>. */
       short_links: {
         Row: {
@@ -913,6 +961,14 @@ export type Database = {
       update_group_step_payload: {
         Args: { p_step: string; p_payload: Json }
         Returns: boolean
+      }
+      /**
+       * Enfileira (ou completa) a boas-vindas de um grupo para quem acabou de entrar (migration 021).
+       * Devolve quantas pessoas ENTRARAM na fila: 0 sem regra ligada, em reentrega ou sem ninguém a receber.
+       */
+      enqueue_group_welcome: {
+        Args: { p_token: string; p_group: string; p_participants: string[]; p_owner?: string | null }
+        Returns: number
       }
       cancel_group_task: { Args: { p_task: string }; Returns: number }
       resume_group_task: { Args: { p_task: string }; Returns: number }

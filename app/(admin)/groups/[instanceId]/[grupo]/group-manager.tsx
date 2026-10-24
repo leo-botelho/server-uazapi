@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 
+import { BoasVindasSection } from './boas-vindas-section'
 import { BulkRemove } from './bulk-remove'
 import { DangerSection } from './danger-section'
 import { InfoSection } from './info-section'
@@ -93,6 +94,7 @@ export function GroupManager({
           <div className="space-y-6">
             <ParticipantsSection {...comum} participantes={viva.participantes} />
             <BulkRemove {...comum} participantes={viva.participantes} />
+            <BoasVindasSection {...comum} />
             <DangerSection
               instanceId={instanceId}
               groupjid={groupjid}

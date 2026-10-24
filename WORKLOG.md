@@ -5,6 +5,57 @@ Registrar aqui toda implementação, fix e decisão técnica relevante ao final 
 
 ---
 
+## 2026-10-24 — Boas-vindas ao entrar no grupo (migration 021) — DESLIGADO ate o usuario assinar `groups`
+
+A spec da uazapiGO NAO documenta o formato do evento `groups` do webhook. Em vez de esperar, o recurso foi
+construido para ser SEGURO MESMO SEM CONHECER O FORMATO: reconhece so o que diz inequivocamente "entrou" e
+ignora o resto. A amostra mascarada do evento (entrega 44c34b2) continua no log para o formato real sair de la.
+
+### Como funciona
+1. O webhook GLOBAL recebe `groups` (o usuario precisa ASSINAR esse evento em Configuracoes; o webhook por
+   instancia e dos agentes do n8n e nunca e tocado).
+2. `lib/groups/boas-vindas.ts` le o evento: aceita `Join`/`Joined`/`Added` (listas explicitas) OU uma acao
+   `add/join/invite` + lista de participantes. NAO e entrada: `remove/leave/left/kick/promote/demote`, `create`, ou
+   `Participants` sozinho sem acao (grupo consultado/criado tambem tem). Normaliza JID (tira `:12` de dispositivo),
+   usa o telefone quando o participante e `@lid` e o telefone vem junto.
+3. O webhook so ENFILEIRA, em `after()`, numa UNICA chamada a `enqueue_group_welcome` (plano Free: 10 ms de CPU, o
+   Worker nao carrega logica). Nunca lanca; migration ausente so avisa uma vez no log.
+4. Quem ENVIA e o agendador: a boas-vindas vira a tarefa "Boas-vindas: <grupo>" de um passo, com ritmo por numero,
+   bloqueio 463, lease sem reenvio e auditoria (aparece em Agendamentos).
+
+### Protecoes (no banco, testadas)
+- **Desligado por padrao**: so age em grupo com regra `enabled = true`.
+- **Reentrega do webhook nao duplica** (`unique` por instancia/grupo/pessoa/janela de 10 min).
+- **Quem entra na mesma janela vai na MESMA mensagem** (uma tarefa, nao uma por pessoa): uma onda de 200 entradas nao
+  vira 200 mensagens nem 200 linhas em Agendamentos. A mensagem e refeita com todos; depois que a execucao abre, quem
+  entra ganha outra tarefa (a antiga nao e reescrita).
+- Teto de 100 pessoas por grupo por hora. Nunca da boas-vindas ao proprio numero da instancia (`owner`).
+- Mais de 20 pessoas de uma vez: sem marcar ninguem (200 @ e spam). Participante oculto (`@lid`) sem telefone:
+  recebe, mas sem marcar ("pessoal"). Mensagem sem `{{mencao}}`: nunca marca ninguem.
+- `{{mencao}}` vira "@telefone" e marca a pessoa de verdade (`mentions` no envio; novo campo opcional no conteudo de
+  texto, max 20, so digitos; `marcarTodos` prevalece).
+
+### Tela
+Secao "Boas-vindas" na pagina de cada grupo: liga/desliga, mensagem com previa, espera (5 a 3600 s, padrao 30) e
+quantas pessoas receberam nos ultimos 7 dias. Avisa que depende do evento `groups` estar assinado.
+
+### Verificado
+- Banco no PGlite: **37** (sem regra/desligada/token errado nao deixam rastro; reentrega; junta quem entra junto; apos
+  abrir vira outra tarefa; dono excluido; LID; 25 pessoas sem marcar; teto por hora; o claim do agendador traz o item
+  pronto; grants e checks). Leitor do evento + regra + mencoes: **61** (13 formas de evento, incluindo as que NAO podem
+  disparar). Regressao de TODAS as outras suites passou (regras 12 suites, banco 6). `tsc` e `eslint` limpos.
+- Navegador (dados falsos): liga, previa, erros visiveis (mensagem vazia, espera de 3 s), corpo enviado.
+- **NAO verificado e e o ponto central**: o formato REAL do evento `groups`. Ate alguem assinar e entrar num grupo de
+  teste, e provavel que o leitor nao reconheca nada (e entao nada e enviado, sem prejuizo). Se nao reconhecer, a linha
+  "amostra do evento groups" no log diz o formato e o leitor e ajustado.
+
+### Para ligar (decisao do usuario)
+1. Aplicar a 021. 2. Configuracoes -> webhook global: acrescentar `groups` aos eventos (aumenta o volume que passa pelo
+webhook: observar o CPU; foi volume o que causou os alertas antigos). 3. Ligar a regra num GRUPO DE TESTE e entrar la
+com outro numero. 4. Se nao chegar, colar a linha "amostra do evento groups" do log.
+
+---
+
 ## 2026-10-24 — Editar agendamento depois de criado (migration 020)
 
 Antes so dava para cancelar e criar de novo. Agora, em Agendamentos:
@@ -95,11 +146,15 @@ Resumo para quem abrir o projeto agora. O detalhe tecnico de cada etapa esta nas
 | ea762d9 | pausa em segundos (migration 018) |
 | 96a6e0e | motivo do botao Enviar apagado + nome acima de 25 caracteres vira aviso |
 | c0098f6 | modo avancado de marcar todos (migration 019) |
+| 130f35b | exportacao CSV, criar grupo, entrar por convite e comunidades |
+| 2476d47 | editar agendamento depois de criado (migration 020) |
+| (proximo) | boas-vindas ao entrar no grupo (migration 021) — desligado ate assinar `groups` |
 
 ### Migrations — o que o usuario aplicou (SQL Editor, a mao)
 - **015, 016, 017: aplicadas** (confirmado pelo usuario: "ja rodei as migrations", logo depois da entrega
   da 016/017).
-- **019: aplicada** (confirmado pelo usuario em 2026-10-24, depois da entrega).
+- **019: aplicada** (confirmado pelo usuario em 2026-10-24). O usuario disse depois "ja rodei todas as migrations":
+  vale para ate a 019; **020 (editar texto de passo) e 021 (boas-vindas) foram criadas DEPOIS e NAO estao confirmadas.**
 - **018: NAO confirmada.** Foi criada depois da primeira confirmacao e o usuario so citou a 019. Sem a 018 tudo funciona, mas cada
   passo espera o minuto seguinte (a pausa de segundos so vale com ela). (Sem a 019, marcar todos abaixo de 60 s no modo
   avancado respondia 503 pedindo para aplica-la; agora aplicada, isso nao ocorre.)
@@ -136,14 +191,16 @@ Resumo para quem abrir o projeto agora. O detalhe tecnico de cada etapa esta nas
    estimativa. Se passar de 10 ms, reduzir `MAX_ITENS_POR_PASSADA` em `lib/groups/scheduler-regras.ts`.
 4. Testar links curtos em celular real (heuristica de abrir o app) e conferir que a previa do WhatsApp
    NAO conta clique. Aplicar a 017 ja foi feito.
-5. **Boas-vindas** (decisao do usuario): assinar `groups` no webhook GLOBAL (Configuracoes; nunca no webhook
-   por instancia, que e do n8n), entrar/sair de um grupo de teste e colar a linha "amostra do evento groups"
-   do log; so entao escrever o tratador + migration 020 (regras por grupo, anti-duplicata). Atencao: aumenta
-   o volume do webhook — assinar numa janela curta e olhar o CPU.
+5. **Boas-vindas**: JA IMPLEMENTADAS (migration 021) e DESLIGADAS. Para ligar (decisao do usuario): aplicar a 021,
+   assinar `groups` no webhook GLOBAL (Configuracoes; nunca no webhook por instancia, que e do n8n), ligar a regra num
+   grupo de teste e entrar la com outro numero. Se nao chegar, colar a linha "amostra do evento groups" do log: o
+   leitor do evento foi escrito sem conhecer o formato (a spec nao traz). Aumenta o volume do webhook — observar o CPU.
 6. Enquetes: acompanhamento do envio ja aparece em Agendamentos; ler votos depende de `POST /message/find`
    (V7, nao verificado) — deixado de lado.
-7. Sem edicao de agendamento depois de criado (cancela e cria de novo); sem criar grupo / entrar por convite /
-   comunidades / exportar CSV (fase 2 deixou de fora; fase 6 do plano).
+7. FEITO nesta rodada: editar agendamento (nome, hora de uma execucao, texto de passo), exportar CSV, criar grupo,
+   entrar por convite e comunidades. As rotas novas NUNCA rodaram contra a uazapiGO real: testar com grupo de teste.
+   Ainda de fora: editar midia/botoes/foto de um passo (cancela e cria de novo) e a fase 6 opcional (etiquetas como
+   alvo de campanha, fila de aprovacao de entrada).
 8. Nome de grupo acima de 25 caracteres: so aviso; **nao verificado** se a uazapiGO aceita renomear acima de
    25 (a spec documenta 25). Testar num grupo antes de aplicar em varios.
 

@@ -5,6 +5,7 @@ import { handleStatusTransition, type AlertInstance } from '@/lib/notifications'
 import type { Json } from '@/types/database'
 import { withMissingColumnFallback } from '@/lib/db-resilient'
 import { registrarAmostraDeGrupos } from '@/lib/groups/evento-grupos'
+import { tratarEntradasEmGrupos } from '@/lib/groups/boas-vindas-webhook'
 
 // Public endpoint — no auth, no middleware cookie handling.
 // uazapiGO must be able to reach this without credentials.
@@ -71,9 +72,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   // Only care about connection events for status monitoring.
   if (eventType !== 'connection') {
-    // `groups`: só uma amostra mascarada no log, para descobrir o formato real do
-    // evento (a spec não traz). Não grava nada, não responde diferente e nunca lança.
-    if (eventType === 'groups') registrarAmostraDeGrupos(raw)
+    // `groups`: uma amostra mascarada no log (a spec não traz o formato do evento) e, se
+    // o grupo tiver regra de boas-vindas LIGADA, a entrada vai para a fila. Não muda a
+    // resposta, não toca no caminho de `connection` e nada aqui lança.
+    if (eventType === 'groups') {
+      registrarAmostraDeGrupos(raw)
+      // Boas-vindas: só ENFILEIRA (uma chamada ao banco, depois da resposta). Quem envia é o agendador.
+      after(() => tratarEntradasEmGrupos(raw))
+    }
     return NextResponse.json({ received: true })
   }
 

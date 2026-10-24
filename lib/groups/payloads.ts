@@ -41,6 +41,12 @@ export const payloadTexto = z.object({
   text: textoDaMensagem,
   /** Gera a prévia do primeiro link da mensagem. */
   linkPreview: z.boolean().optional(),
+  /**
+   * Telefones (só dígitos) a marcar, para mensagens que citam pessoas específicas — as
+   * boas-vindas. O texto precisa conter `@<telefone>` de cada um para a menção aparecer.
+   * Convive com `marcarTodos`, que prevalece.
+   */
+  mentions: z.array(z.string().regex(/^\d{8,15}$/, 'Telefone inválido na menção.')).max(20).optional(),
 })
 
 export const payloadMidia = z.object({
@@ -169,6 +175,7 @@ export function montarPedidoDeEnvio(
           text: conteudo.payload.text,
           delay: ATRASO_DIGITANDO_MS,
           ...(conteudo.payload.linkPreview ? { linkPreview: true } : {}),
+          ...(conteudo.payload.mentions?.length ? { mentions: conteudo.payload.mentions.join(',') } : {}),
           ...mentions,
         },
       }
