@@ -457,3 +457,81 @@ export function exigeConfirmacaoDoAgendamento(
   if (kinds.some(ehAlteracao) && quantidadeDeGrupos > 1) return true
   return marcarTodos && kinds.some((k) => !ehAlteracao(k)) && quantidadeDeGrupos > 3
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Editar um agendamento que já existe
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Valida a NOVA hora de UMA execução que ainda não abriu. As mesmas regras da criação —
+ * futuro com antecedência, dentro do horizonte, e sem invadir as outras execuções da tarefa
+ * (nem ser invadida por elas): `outros` são as horas das demais execuções ATIVAS.
+ */
+export function validarReagendamento(
+  novaBruta: unknown,
+  outros: number[],
+  quantidadeDeGrupos: number,
+  espacamentoS: number,
+  jitterPct: number,
+  agora: number = Date.now()
+): Veredito<{ quando: string }> {
+  const lidas = lerInstantes([novaBruta])
+  if (!lidas.ok) return lidas
+
+  const [novo] = lidas.instantes
+
+  const janela = conferirJanela([novo], agora)
+  if (janela) return janela
+
+  const duracaoMs = duracaoDaOcorrenciaMs(quantidadeDeGrupos, espacamentoS, jitterPct)
+  const pisoMs = pisoEntreAcoesMs(espacamentoS, jitterPct)
+
+  // Vale nos dois sentidos: a nova pode vir antes ou depois de cada uma das outras.
+  for (const outro of outros) {
+    if (Math.abs(novo - outro) < duracaoMs + pisoMs) {
+      return erro(
+        400,
+        'Essa hora fica perto demais de outra execução deste agendamento: cada uma leva cerca de ' +
+          `${duracaoPorExtenso(duracaoMs)} para percorrer os grupos, com pelo menos ${duracaoPorExtenso(pisoMs)} de pausa.`,
+        { datasMuitoJuntas: true, duracaoMs, pisoMs }
+      )
+    }
+  }
+
+  return { ok: true, quando: new Date(novo).toISOString() }
+}
+
+/** Passos cujo texto dá para editar sem refazer o agendamento, e o campo do conteúdo que o guarda. */
+const CAMPO_DE_TEXTO: Record<string, string> = {
+  send_text: 'text',
+  update_name: 'name',
+  update_description: 'description',
+}
+
+export const ehPassoDeTextoEditavel = (kind: string) => kind in CAMPO_DE_TEXTO
+
+/**
+ * O conteúdo novo de um passo, só com o texto trocado, já validado pelas MESMAS regras da
+ * criação (tamanho do nome, 512 da descrição, 4096 da mensagem). Mídia, botões e foto ficam de
+ * fora: não são "só um texto" — nesses casos, cancela e cria de novo.
+ */
+export function editarTextoDoPasso(
+  kind: string,
+  payloadAtual: unknown,
+  textoNovo: unknown
+): { ok: true; payload: Record<string, unknown> } | { ok: false; erro: string } {
+  const campo = CAMPO_DE_TEXTO[kind]
+  if (!campo) {
+    return {
+      ok: false,
+      erro: 'Só dá para editar o texto de mensagens de texto e dos passos de nome e descrição. Para os demais, cancele e crie de novo.',
+    }
+  }
+  if (typeof textoNovo !== 'string') return { ok: false, erro: 'Informe o novo texto.' }
+
+  const atual = ehObjeto(payloadAtual) ? payloadAtual : {}
+  const v = validarPassoAgendavel(kind, { ...atual, [campo]: textoNovo }, null)
+  if (!v.ok) return { ok: false, erro: v.erro }
+
+  return { ok: true, payload: v.conteudo.payload as Record<string, unknown> }
+}

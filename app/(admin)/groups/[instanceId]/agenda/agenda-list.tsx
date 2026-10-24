@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { ChevronDown, ChevronRight, Pause, Play, RotateCcw, Trash2 } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, Pause, Pencil, Play, RotateCcw, Trash2, X } from 'lucide-react'
 
 import { chamarApi } from '@/components/admin/groups/chamar-api'
 import { ConfirmDialog } from '@/components/admin/groups/confirm-dialog'
@@ -10,9 +10,12 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { formatarEmBrasilia } from '@/components/ui/datetime-field'
+import { DateTimeField, formatarEmBrasilia } from '@/components/ui/datetime-field'
+import { Input } from '@/components/ui/input'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Textarea } from '@/components/ui/textarea'
+import { ehPassoDeTextoEditavel } from '@/lib/groups/agenda'
 
 interface Ocorrencia {
   id: string
@@ -165,6 +168,117 @@ function Detalhes({ run, podeRepetir, aoRepetir }: { run: Ocorrencia; podeRepeti
   )
 }
 
+const CAMPO_DO_TEXTO: Record<string, string> = { send_text: 'text', update_name: 'name', update_description: 'description' }
+
+function textoDoPasso(p: Passo): string {
+  const v = p.payload?.[CAMPO_DO_TEXTO[p.kind] ?? '']
+  return typeof v === 'string' ? v : ''
+}
+
+/** O nome do agendamento, com lápis para editar na própria linha. */
+function NomeEditavel({ tarefa, editavel, aoMudar }: { tarefa: Tarefa; editavel: boolean; aoMudar: () => void }) {
+  const [editando, setEditando] = useState(false)
+  const [nome, setNome] = useState(tarefa.nome)
+  const [salvando, setSalvando] = useState(false)
+
+  async function salvar() {
+    setSalvando(true)
+    const r = await chamarApi(`/api/groups/tasks/${tarefa.id}`, { nome }, 'PATCH')
+    setSalvando(false)
+    if (!r.ok) { toast.error(r.erro, { duration: 8000 }); return }
+    toast.success('Nome atualizado.')
+    setEditando(false)
+    aoMudar()
+  }
+
+  if (!editando) {
+    return (
+      <div className="flex min-w-0 items-center gap-1.5">
+        <CardTitle className="truncate">{tarefa.nome}</CardTitle>
+        {editavel && (
+          <Button size="icon-sm" variant="ghost" aria-label="Renomear agendamento" onClick={() => { setNome(tarefa.nome); setEditando(true) }}>
+            <Pencil />
+          </Button>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <Input aria-label="Novo nome do agendamento" value={nome} maxLength={120} onChange={(e) => setNome(e.target.value)} className="h-8" />
+      <Button size="icon-sm" aria-label="Salvar nome" disabled={salvando || !nome.trim() || nome.trim() === tarefa.nome} onClick={() => void salvar()}><Check /></Button>
+      <Button size="icon-sm" variant="ghost" aria-label="Cancelar" onClick={() => setEditando(false)}><X /></Button>
+    </div>
+  )
+}
+
+/**
+ * Editar uma execução que ainda não abriu: a hora dela e o texto do passo. O texto vale para
+ * TODAS as execuções do passo (é o conteúdo do passo, não de uma data) — e a tela diz isso.
+ */
+function EdicaoDaExecucao({ run, passo, aoMudar }: { run: Ocorrencia; passo: Passo | undefined; aoMudar: () => void }) {
+  const [quando, setQuando] = useState<string | null>(run.run_at)
+  const [texto, setTexto] = useState(passo ? textoDoPasso(passo) : '')
+  const [salvando, setSalvando] = useState<'hora' | 'texto' | null>(null)
+
+  const textoEditavel = !!passo && ehPassoDeTextoEditavel(passo.kind)
+  const horaMudou = !!quando && Date.parse(quando) !== Date.parse(run.run_at)
+  const textoMudou = !!passo && texto !== textoDoPasso(passo)
+
+  async function salvarHora() {
+    setSalvando('hora')
+    const r = await chamarApi(`/api/groups/runs/${run.id}`, { acao: 'reagendar', quando })
+    setSalvando(null)
+    if (!r.ok) { toast.error(r.erro, { duration: 9000 }); return }
+    toast.success('Hora atualizada.')
+    aoMudar()
+  }
+
+  async function salvarTexto() {
+    if (!passo) return
+    setSalvando('texto')
+    const r = await chamarApi(`/api/groups/steps/${passo.id}`, { texto }, 'PATCH')
+    setSalvando(null)
+    if (!r.ok) { toast.error(r.erro, { duration: 9000 }); return }
+    toast.success('Texto atualizado.')
+    aoMudar()
+  }
+
+  return (
+    <div className="space-y-4 border-b border-border p-3">
+      <div className="space-y-1.5">
+        <p className="text-sm font-medium">Mudar a hora desta execução</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <DateTimeField value={quando} onChange={setQuando} aria-label="Nova data e hora" />
+          <Button size="sm" disabled={!horaMudou || salvando !== null} onClick={() => void salvarHora()}>
+            {salvando === 'hora' ? 'Salvando…' : 'Salvar hora'}
+          </Button>
+        </div>
+      </div>
+
+      {textoEditavel && (
+        <div className="space-y-1.5">
+          <p className="text-sm font-medium">Editar o texto</p>
+          <Textarea rows={3} value={texto} aria-label="Texto do passo" onChange={(e) => setTexto(e.target.value)} />
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" disabled={!textoMudou || salvando !== null} onClick={() => void salvarTexto()}>
+              {salvando === 'texto' ? 'Salvando…' : 'Salvar texto'}
+            </Button>
+            <p className="text-xs text-muted-foreground">Vale para todas as execuções deste passo.</p>
+          </div>
+        </div>
+      )}
+
+      {!textoEditavel && passo && (
+        <p className="text-xs text-muted-foreground">
+          Mídia, botões e foto não se editam aqui: cancele e crie de novo.
+        </p>
+      )}
+    </div>
+  )
+}
+
 export function AgendaList({ instanceId }: { instanceId: string }) {
   const [tarefas, setTarefas] = useState<Tarefa[] | null>(null)
   const [erro, setErro] = useState<string | null>(null)
@@ -247,7 +361,7 @@ export function AgendaList({ instanceId }: { instanceId: string }) {
             <CardHeader className="space-y-2">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0 space-y-1">
-                  <CardTitle className="truncate">{t.nome}</CardTitle>
+                  <NomeEditavel tarefa={t} editavel={!encerrada} aoMudar={recarregar} />
                   <p className="text-sm text-muted-foreground">
                     {t.passos.length > 1 ? `${t.passos.length} passos` : (ROTULO_DO_TIPO[t.passos[0]?.kind ?? ''] ?? 'Ação')} ·{' '}
                     {t.grupos} {t.grupos === 1 ? 'grupo' : 'grupos'} · intervalo de {t.espacamentoS} s
@@ -323,6 +437,9 @@ export function AgendaList({ instanceId }: { instanceId: string }) {
 
                     {expandida && (
                       <div className="border-t border-border">
+                        {o.status === 'scheduled' && !encerrada && (
+                          <EdicaoDaExecucao run={o} passo={passo} aoMudar={recarregar} />
+                        )}
                         <Detalhes
                           run={o}
                           podeRepetir={t.status === 'scheduled' || t.status === 'running' || t.status === 'done'}

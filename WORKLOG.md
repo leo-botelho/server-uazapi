@@ -5,6 +5,36 @@ Registrar aqui toda implementação, fix e decisão técnica relevante ao final 
 
 ---
 
+## 2026-10-24 — Editar agendamento depois de criado (migration 020)
+
+Antes so dava para cancelar e criar de novo. Agora, em Agendamentos:
+- **Renomear** (lapis no titulo) — `PATCH /api/groups/tasks/[taskId]`.
+- **Mudar a hora de UMA execucao** que ainda nao abriu — `POST /api/groups/runs/[runId]` `{acao:'reagendar'}`.
+  Mesmas regras da criacao (futuro com 1 min de antecedencia, ate 365 dias) e NAO invade nem e invadida pelas
+  outras execucoes ATIVAS da tarefa, nos dois sentidos (duracao de pior caso + piso). A gravacao filtra por
+  `status = 'scheduled'`: se o agendador abriu a execucao no meio, a rota responde 409 em vez de mudar uma execucao
+  que ja esta enviando. `unique (step_id, run_at)` virou mensagem ("ja existe uma execucao deste passo nesse horario").
+- **Editar o texto de um passo** — `PATCH /api/groups/steps/[stepId]` `{texto}`; so mensagem de texto, nome e
+  descricao. Midia, botoes e foto: "cancele e crie de novo" (nao sao so um texto). Vale para TODAS as execucoes do
+  passo, e a tela diz isso. Passa pelas mesmas regras da criacao (4096 / 100 / 512).
+
+### Por que a migration 020
+O agendador le o conteudo do passo a cada item que reivindica. Trocar o texto com a execucao ja enviando mandaria o
+texto velho a uns grupos e o novo a outros. `update_group_step_payload` grava SO se nenhuma execucao do passo saiu de
+`scheduled` e a tarefa esta `scheduled/paused/blocked`, **verificacao e gravacao na mesma instrucao**. Sem a 020 a rota
+responde 503 pedindo para aplica-la (renomear e reagendar nao dependem dela).
+
+### Verificado
+- Regras: **32** (reagendar nos dois sentidos, folga de 3 grupos ~3,2 min, fuso, editar texto por tipo, preserva
+  `linkPreview`, rejeita midia/botoes/foto). Banco no PGlite: **18** (grava com tudo aguardando; recusa e NAO muda se UMA
+  execucao ja abriu; recusa em running/done/failed/canceled/paused/blocked_by_wa_limits; tarefa done/canceled nao se
+  edita; idempotente; grants). `tsc` limpo.
+- Navegador (dados falsos): lapis so em agendamento ativo; corpos enviados corretos (08:30 de Brasilia = 11:30Z);
+  execucao de midia sem edicao de texto e com explicacao; recusa mostra o motivo; concluido sem edicao.
+- NAO verificado contra Supabase real. Aplicar a 020 antes de usar "editar texto".
+
+---
+
 ## 2026-10-24 — Exportacoes CSV, criar grupo, entrar por convite e comunidades
 
 Pedido do usuario: "deixar enquete para depois e implementar o restante" (todas as migrations ja aplicadas).

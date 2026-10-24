@@ -699,6 +699,8 @@ export type Database = {
             | 'done' | 'failed' | 'canceled' | 'blocked_by_wa_limits'
         }
         Update: {
+          /** Só muda enquanto a ocorrência está `scheduled` (reagendar). */
+          run_at?: string
           status?:
             | 'scheduled' | 'open' | 'running' | 'paused'
             | 'done' | 'failed' | 'canceled' | 'blocked_by_wa_limits'
@@ -903,6 +905,14 @@ export type Database = {
       resolve_short_link: {
         Args: { p_slug: string; p_count?: boolean }
         Returns: { kind: string; target_url: string }[]
+      }
+      /**
+       * Troca o conteúdo de um passo SÓ se nenhuma execução dele saiu de `scheduled` (migration
+       * 020). Verificação e gravação na mesma instrução: sem janela para o agendador ler pela metade.
+       */
+      update_group_step_payload: {
+        Args: { p_step: string; p_payload: Json }
+        Returns: boolean
       }
       cancel_group_task: { Args: { p_task: string }; Returns: number }
       resume_group_task: { Args: { p_task: string }; Returns: number }

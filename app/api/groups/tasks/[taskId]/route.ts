@@ -101,3 +101,39 @@ function erroDoBanco(acao: string, mensagem: string): NextResponse {
   console.error(`[groups/tasks] falha ao ${acao}:`, mensagem)
   return NextResponse.json({ error: 'Não foi possível concluir a ação.' }, { status: 500 })
 }
+
+/**
+ * PATCH /api/groups/tasks/[taskId] — renomeia o agendamento. Corpo: `{ nome }`.
+ * Só o nome: o resto (grupos, passos, horários) tem rota e regra próprias.
+ */
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ taskId: string }> }
+): Promise<NextResponse> {
+  const { error: authError } = await requireAuth()
+  if (authError) return authError
+
+  const { taskId } = await params
+
+  let nome: unknown
+  try {
+    nome = ((await request.json()) as { nome?: unknown }).nome
+  } catch {
+    return NextResponse.json({ error: 'Corpo da requisição inválido.' }, { status: 400 })
+  }
+
+  const limpo = typeof nome === 'string' ? nome.trim().slice(0, 120) : ''
+  if (!limpo) return NextResponse.json({ error: 'Dê um nome ao agendamento.' }, { status: 400 })
+
+  const db = await createServiceClient()
+  const { data, error } = await db
+    .from('group_tasks')
+    .update({ name: limpo, updated_at: new Date().toISOString() })
+    .eq('id', taskId)
+    .select('id')
+
+  if (error) return erroDoBanco('renomear', error.message)
+  if (!data || data.length === 0) return NextResponse.json({ error: 'Agendamento não encontrado.' }, { status: 404 })
+
+  return NextResponse.json({ ok: true, nome: limpo })
+}
