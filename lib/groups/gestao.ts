@@ -12,8 +12,30 @@ import type { UazapiGroup, UazapiParticipantsResult } from '@/lib/uazapi/group-t
 // Limites (da spec do uazapiGO)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Renomear aceita 25 caracteres. (Criar um grupo aceita 100 — não confundir.) */
-export const MAX_NOME_DO_GRUPO = 25
+/**
+ * O que a spec da uazapiGO documenta para RENOMEAR: "entre 1 e 25 caracteres" (criar um
+ * grupo documenta 100). É um AVISO, não uma trava: grupos criados com nomes longos existem,
+ * então o WhatsApp aceita mais que isso, e bloquear aqui impediria renomear esses grupos.
+ * Se a uazapiGO recusar, o erro volta traduzido na tela (ou no item, se estiver agendado).
+ */
+export const NOME_DOCUMENTADO_NA_SPEC = 25
+
+/** Teto de segurança: o mesmo de criar um grupo. Acima disso nem tentamos. */
+export const MAX_NOME_DO_GRUPO = 100
+
+/**
+ * Aviso para nomes acima do que a spec documenta, ou null. Conta pontos de código
+ * (um emoji vale 1), como a validação.
+ */
+export function avisoDoNome(nome: string): string | null {
+  const tamanho = [...nome.trim()].length
+  if (tamanho <= NOME_DOCUMENTADO_NA_SPEC) return null
+  return (
+    `A uazapiGO documenta no máximo ${NOME_DOCUMENTADO_NA_SPEC} caracteres para renomear e este nome tem ${tamanho}. ` +
+    'Grupos com nomes maiores existem, então pode funcionar — se for recusado, o erro aparece e nada é alterado. ' +
+    'Vale testar num grupo antes de aplicar em vários.'
+  )
+}
 
 /** Acima disso a API devolve 413. */
 export const MAX_DESCRICAO_DO_GRUPO = 512

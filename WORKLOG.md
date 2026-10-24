@@ -5,6 +5,22 @@ Registrar aqui toda implementação, fix e decisão técnica relevante ao final 
 
 ---
 
+## 2026-10-24 — Envio apagado com 13 grupos; nome com mais de 25 caracteres
+
+- **Botao "Enviar" apagado sem explicacao (de novo).** Com 13 grupos e "Marcar todos" ligado o teto de
+  10 grupos travava o botao, e no envio imediato o motivo so aparecia numa linha cinza minuscula. Agora
+  o motivo e um alerta ambar tambem no envio imediato ("Ainda nao da para enviar: ...") e o interruptor
+  de marcar todos avisa na hora quando a selecao passa de 10. (A tela de agendar ja fazia isso.)
+- **Nome do grupo com mais de 25 caracteres.** A spec documenta "1 a 25" para RENOMEAR (criar aceita
+  100). Eu tratava como trava dura. Mas o usuario tem grupos com nomes maiores, o que mostra que o
+  WhatsApp aceita mais, e a trava impedia renomear justamente esses. Agora 25 e so AVISO (ambar,
+  explicando que a uazapiGO documenta 25 e que vale testar num grupo antes); a trava dura passa a 100
+  (o limite de criar). Se a uazapiGO recusar, o erro aparece na tela (ou no item do agendamento) e nada
+  e alterado. NAO verificado contra a uazapiGO real se ela aceita renomear acima de 25.
+- Testes: gestao 76/76 (26 caracteres passam com aviso, 100 passam, 101 recusam, emoji vale 1).
+
+---
+
 ## 2026-10-24 — Pausa entre passos em segundos (migration 018)
 
 Feedback do usuario: 1 minuto minimo entre passos e muito (nome + descricao + mensagem = 3 min;

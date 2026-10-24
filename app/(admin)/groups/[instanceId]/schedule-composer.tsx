@@ -16,7 +16,7 @@ import {
   atrasoEmMinutos, motivoDoPasso, passoVazio, quandoEfetivo,
   type AcaoAgendada, type PassoDaTela, type UnidadeDaPausa, type UnidadeDeAtraso,
 } from '@/lib/groups/agenda-tela'
-import { MAX_DESCRICAO_DO_GRUPO, MAX_NOME_DO_GRUPO } from '@/lib/groups/gestao'
+import { MAX_DESCRICAO_DO_GRUPO, MAX_NOME_DO_GRUPO, avisoDoNome } from '@/lib/groups/gestao'
 import { prepararFotoDeGrupo } from '@/lib/image-client'
 
 /** Uma execução prevista, para o cronograma que a tela mostra antes de confirmar. */
@@ -291,6 +291,7 @@ export function ScheduleComposer({
                 <p className={`text-xs ${[...passo.novoNome.trim()].length > MAX_NOME_DO_GRUPO ? 'text-destructive' : 'text-muted-foreground'}`}>
                   {[...passo.novoNome.trim()].length}/{MAX_NOME_DO_GRUPO}
                 </p>
+                {avisoDoNome(passo.novoNome) && <p className="text-xs text-amber-400">{avisoDoNome(passo.novoNome)}</p>}
               </div>
             )}
 

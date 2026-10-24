@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import {
   MAX_DESCRICAO_DO_GRUPO, MAX_NOME_DO_GRUPO,
-  validarDescricaoDoGrupo, validarNomeDoGrupo,
+  avisoDoNome, validarDescricaoDoGrupo, validarNomeDoGrupo,
 } from '@/lib/groups/gestao'
 import { prepararFotoDeGrupo } from '@/lib/image-client'
 
@@ -128,6 +128,7 @@ export function InfoSection({
           <p className={`text-xs ${!nomeV.ok && nome.length > 0 ? 'text-destructive' : 'text-muted-foreground'}`}>
             {!nomeV.ok && nome.length > 0 ? nomeV.erro : `${tamanho(nome)}/${MAX_NOME_DO_GRUPO}`}
           </p>
+          {nomeV.ok && avisoDoNome(nome) && <p className="text-xs text-amber-400">{avisoDoNome(nome)}</p>}
         </div>
 
         {/* Descrição */}

@@ -389,6 +389,12 @@ export function GroupWorkspace({ instanceId, instanceName, grupos, precisaAtuali
                     Notifica todos os participantes de cada grupo. Intervalo mínimo de 60 s e até{' '}
                     {MAX_GRUPOS_MARCANDO_TODOS} grupos por envio.
                   </p>
+                  {excedeTetoDeMarcarTodos && (
+                    <p className="text-xs font-medium text-amber-400" role="status">
+                      Você selecionou {alvos.length} grupos: com “Marcar todos” ligado o máximo é {MAX_GRUPOS_MARCANDO_TODOS}.
+                      Desligue o interruptor ou selecione menos grupos (dá para enviar em duas levas).
+                    </p>
+                  )}
                 </div>
                 <Switch id="marcar-todos" checked={marcarTodos} onCheckedChange={setMarcarTodos} />
               </div>
@@ -441,15 +447,12 @@ export function GroupWorkspace({ instanceId, instanceName, grupos, precisaAtuali
                 {agendar ? <CalendarClock className="size-4" aria-hidden /> : <Send className="size-4" aria-hidden />}
                 {agendar ? (agendando ? 'Agendando…' : 'Agendar para') : 'Enviar para'} {alvos.length} {alvos.length === 1 ? 'grupo' : 'grupos'}
               </Button>
-              {motivoParaNaoEnviar && agendar && (
+              {motivoParaNaoEnviar && (agendar || alvos.length > 0) && (
                 <Alert className="border-amber-500/40">
                   <TriangleAlert className="text-amber-400" aria-hidden />
-                  <AlertTitle>Ainda não dá para agendar</AlertTitle>
+                  <AlertTitle>{agendar ? 'Ainda não dá para agendar' : 'Ainda não dá para enviar'}</AlertTitle>
                   <AlertDescription>{motivoParaNaoEnviar}</AlertDescription>
                 </Alert>
-              )}
-              {motivoParaNaoEnviar && !agendar && alvos.length > 0 && (
-                <p className="text-center text-xs text-muted-foreground">{motivoParaNaoEnviar}</p>
               )}
             </div>
           </>
