@@ -39,18 +39,25 @@ export interface PassoDaTela {
   /** URL da foto já guardada no bucket. */
   fotoUrl: string | null
 
-  /** `datas`: dias e horas fixos. `depois`: um atraso a partir do início (sequência). */
-  quando: 'datas' | 'depois'
+  /**
+   * `datas`: dias e horas fixos. `depois`: um atraso a partir do início da sequência.
+   * `apos`: logo depois que o passo ANTERIOR termina, com uma pausa.
+   */
+  quando: 'datas' | 'depois' | 'apos'
   /** ISO em UTC; null enquanto a pessoa não escolheu. */
   datas: (string | null)[]
   atraso: number | ''
   unidade: UnidadeDeAtraso
+  /** Pausa depois do passo anterior (`apos`). */
+  pausa: number | ''
+  unidadeDaPausa: UnidadeDeAtraso
 }
 
 let contador = 0
 export const novaChave = () => `passo-${++contador}`
 
-export function passoVazio(): PassoDaTela {
+/** Passo novo. Do segundo em diante o natural é "logo depois do anterior", não uma data. */
+export function passoVazio(quando: 'datas' | 'apos' = 'datas'): PassoDaTela {
   return {
     chave: novaChave(),
     acao: 'mensagem',
@@ -58,10 +65,12 @@ export function passoVazio(): PassoDaTela {
     novoNome: '',
     novaDescricao: '',
     fotoUrl: null,
-    quando: 'datas',
+    quando,
     datas: [null],
     atraso: '',
     unidade: 'd',
+    pausa: 1,
+    unidadeDaPausa: 'min',
   }
 }
 
@@ -82,6 +91,16 @@ export function atrasoEmMinutos(p: Pick<PassoDaTela, 'atraso' | 'unidade'>): num
   const minutos = p.atraso * MINUTOS_POR_UNIDADE[p.unidade]
   return minutos <= MAX_ATRASO_RELATIVO_MIN ? minutos : null
 }
+
+/** A pausa em minutos (mínimo 1: o agendador roda a cada minuto), ou null se inválida. */
+export function pausaEmMinutos(p: Pick<PassoDaTela, 'pausa' | 'unidadeDaPausa'>): number | null {
+  if (p.pausa === '' || !Number.isFinite(p.pausa) || !Number.isInteger(p.pausa) || p.pausa < 1) return null
+  const minutos = p.pausa * MINUTOS_POR_UNIDADE[p.unidadeDaPausa]
+  return minutos <= MAX_ATRASO_RELATIVO_MIN ? minutos : null
+}
+
+/** O modo que vale para o passo: o primeiro sempre usa data fixa, é ele que ancora. */
+export const quandoEfetivo = (p: Pick<PassoDaTela, 'quando'>, indice: number) => (indice === 0 ? 'datas' : p.quando)
 
 /**
  * O que falta para este passo estar completo, ou null. `indice` 0 não pode ser
@@ -109,8 +128,13 @@ export function motivoDoPasso(p: PassoDaTela, indice: number): string | null {
       break
   }
 
-  if (indice > 0 && p.quando === 'depois') {
+  const quando = quandoEfetivo(p, indice)
+
+  if (quando === 'depois') {
     return atrasoEmMinutos(p) === null ? 'informe quanto tempo depois do início.' : null
+  }
+  if (quando === 'apos') {
+    return pausaEmMinutos(p) === null ? 'informe a pausa depois do passo anterior (mínimo 1 minuto).' : null
   }
 
   if (p.datas.length === 0 || p.datas.some((d) => d === null)) return 'escolha a data e a hora.'
@@ -128,9 +152,9 @@ export function passoParaApi(p: PassoDaTela, indice: number): Record<string, unk
         return { kind: envio.kind, payload: envio.payload as unknown as Record<string, unknown> }
       })()
 
-  if (indice > 0 && p.quando === 'depois') {
-    return { ...conteudo, offsetMinutos: atrasoEmMinutos(p) }
-  }
+  const quando = quandoEfetivo(p, indice)
+  if (quando === 'depois') return { ...conteudo, offsetMinutos: atrasoEmMinutos(p) }
+  if (quando === 'apos') return { ...conteudo, aposAnteriorMin: pausaEmMinutos(p) }
   return { ...conteudo, datas: p.datas.filter((d): d is string => d !== null) }
 }
 

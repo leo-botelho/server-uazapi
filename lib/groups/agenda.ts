@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 import { avaliarAlvosEEspacamento, type GrupoConhecido, type Veredito } from './dispatch'
 import { validarDescricaoDoGrupo, validarNomeDoGrupo } from './gestao'
-import { ESPACAMENTO_MINIMO_S } from './limits'
+import { ESPACAMENTO_MINIMO_S, JITTER_PADRAO_PCT } from './limits'
 import { ehTipoDeEnvio, validarConteudo } from './payloads'
 
 /**
@@ -174,8 +174,16 @@ function conferirJanela(instantes: number[], agora: number): Erro | null {
 }
 
 /** Quanto leva para percorrer os grupos: o que uma ocorrência ocupa do relógio. */
-export const duracaoDaOcorrenciaMs = (quantidadeDeGrupos: number, espacamentoS: number) =>
-  Math.max(0, quantidadeDeGrupos - 1) * Math.max(espacamentoS, ESPACAMENTO_MINIMO_S) * 1000
+export const duracaoDaOcorrenciaMs = (
+  quantidadeDeGrupos: number,
+  espacamentoS: number,
+  jitterPct: number = JITTER_PADRAO_PCT
+) =>
+  // A variação do intervalo empurra cada posição até `jitterPct` para a frente: a
+  // duração que importa para não invadir o passo seguinte é a do PIOR caso.
+  Math.ceil(
+    Math.max(0, quantidadeDeGrupos - 1) * Math.max(espacamentoS, ESPACAMENTO_MINIMO_S) * 1000 * (1 + jitterPct / 100)
+  )
 
 /**
  * Duas ocorrências só podem se sobrepor se a primeira ainda estiver enviando
@@ -188,8 +196,9 @@ function conferirSobreposicao(instantes: number[], duracaoMs: number): Erro | nu
     if (instantes[i] - instantes[i - 1] < duracaoMs + FOLGA_ENTRE_OCORRENCIAS_MS) {
       return erro(
         400,
-        'As datas estão juntas demais: cada envio leva cerca de ' +
-          `${Math.ceil(duracaoMs / 60_000)} min para percorrer os grupos. Afaste as datas.`,
+        'Os passos estão juntos demais: cada um leva cerca de ' +
+          `${Math.max(1, Math.ceil(duracaoMs / 60_000))} min para percorrer os grupos e o seguinte só pode começar depois. ` +
+          'Afaste as datas ou escolha “Logo depois do passo anterior”.',
         { datasMuitoJuntas: true, duracaoMs }
       )
     }
@@ -202,7 +211,8 @@ export function validarDatas(
   brutas: unknown,
   quantidadeDeGrupos: number,
   espacamentoS: number,
-  agora: number = Date.now()
+  agora: number = Date.now(),
+  jitterPct: number = JITTER_PADRAO_PCT
 ): DatasValidadas {
   const lidas = lerInstantes(brutas)
   if (!lidas.ok) return lidas
@@ -210,7 +220,7 @@ export function validarDatas(
   const janela = conferirJanela(lidas.instantes, agora)
   if (janela) return janela
 
-  const folga = conferirSobreposicao(lidas.instantes, duracaoDaOcorrenciaMs(quantidadeDeGrupos, espacamentoS))
+  const folga = conferirSobreposicao(lidas.instantes, duracaoDaOcorrenciaMs(quantidadeDeGrupos, espacamentoS, jitterPct))
   if (folga) return folga
 
   return { ok: true, datas: lidas.instantes.map((t) => new Date(t).toISOString()) }
@@ -229,6 +239,8 @@ export interface PassoPedido {
   payload: unknown
   datas?: unknown
   offsetMinutos?: unknown
+  /** Minutos de pausa depois que o passo ANTERIOR termina de percorrer os grupos. */
+  aposAnteriorMin?: unknown
 }
 
 export interface PedidoDeAgendamento {
@@ -308,7 +320,8 @@ export function avaliarAgendamento(
 
   // ── Quando: o primeiro passo ancora, os demais podem ser relativos ─────────
   const primeiro = brutos[0] as Record<string, unknown>
-  if (primeiro.offsetMinutos !== undefined && primeiro.offsetMinutos !== null) {
+  const primeiroRelativo = [primeiro.offsetMinutos, primeiro.aposAnteriorMin].some((v) => v !== undefined && v !== null)
+  if (primeiroRelativo) {
     return erro(400, 'O primeiro passo precisa de uma data fixa: é ele que marca o início da sequência.')
   }
 
@@ -319,13 +332,38 @@ export function avaliarAgendamento(
   const instantesPorPasso: number[][] = [lidasDoPrimeiro.instantes]
   const atrasos: (number | null)[] = [null]
 
+  const duracaoMs = duracaoDaOcorrenciaMs(
+    alvos.aprovado.targetJids.length, alvos.aprovado.espacamentoS, alvos.aprovado.jitterPct
+  )
+
   for (const [i, bruto] of brutos.entries()) {
     if (i === 0) continue
     const passo = bruto as Record<string, unknown>
     const temDatas = passo.datas !== undefined && passo.datas !== null
     const temAtraso = passo.offsetMinutos !== undefined && passo.offsetMinutos !== null
+    const temApos = passo.aposAnteriorMin !== undefined && passo.aposAnteriorMin !== null
 
-    if (temDatas && temAtraso) return erro(400, `${prefixo(i)}use datas fixas OU um atraso, não os dois.`)
+    if ([temDatas, temAtraso, temApos].filter(Boolean).length > 1) {
+      return erro(400, `${prefixo(i)}escolha UMA forma de marcar o horário: data fixa, depois do início ou logo depois do passo anterior.`)
+    }
+
+    if (temApos) {
+      const pausa = passo.aposAnteriorMin
+      if (typeof pausa !== 'number' || !Number.isInteger(pausa) || pausa < 1 || pausa > MAX_ATRASO_RELATIVO_MIN) {
+        return erro(400, `${prefixo(i)}a pausa precisa ser um número inteiro de minutos, a partir de 1.`)
+      }
+
+      // Começa quando o passo anterior TERMINA de percorrer os grupos (pior caso, com a
+      // variação do intervalo) mais a pausa. A última execução dele é a que conta.
+      const anterior = instantesPorPasso[i - 1]
+      const inicioDele = anterior[anterior.length - 1]
+      const quando = inicioDele + duracaoMs + pausa * 60_000
+
+      instantesPorPasso.push([quando])
+      // Guardado como atraso a partir do início, só para a lista mostrar "N depois do início".
+      atrasos.push(Math.max(0, Math.round((quando - ancora) / 60_000)))
+      continue
+    }
 
     if (temAtraso) {
       const min = passo.offsetMinutos
@@ -360,10 +398,7 @@ export function avaliarAgendamento(
   if (janela) return janela
 
   // Sobreposição sobre o CONJUNTO: passos diferentes na mesma hora também disputam o número.
-  const folga = conferirSobreposicao(
-    todos,
-    duracaoDaOcorrenciaMs(alvos.aprovado.targetJids.length, alvos.aprovado.espacamentoS)
-  )
+  const folga = conferirSobreposicao(todos, duracaoMs)
   if (folga) return folga
 
   const nome = typeof pedido.name === 'string' ? pedido.name.trim().slice(0, 120) : ''

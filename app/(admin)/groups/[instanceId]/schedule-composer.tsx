@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { MAX_DATAS_POR_PASSO, MAX_PASSOS } from '@/lib/groups/agenda'
 import {
-  MINUTOS_POR_UNIDADE, ROTULO_DA_ACAO, ROTULO_DA_UNIDADE, atrasoEmMinutos, motivoDoPasso, passoVazio,
+  MINUTOS_POR_UNIDADE, ROTULO_DA_ACAO, ROTULO_DA_UNIDADE, atrasoEmMinutos, motivoDoPasso, passoVazio, quandoEfetivo,
   type AcaoAgendada, type PassoDaTela, type UnidadeDeAtraso,
 } from '@/lib/groups/agenda-tela'
 import { MAX_DESCRICAO_DO_GRUPO, MAX_NOME_DO_GRUPO } from '@/lib/groups/gestao'
@@ -98,23 +98,54 @@ function QuandoDoPasso({
 }) {
   const minutos = atrasoEmMinutos(passo)
   const chegada = inicio && minutos !== null ? new Date(Date.parse(inicio) + minutos * 60_000).toISOString() : null
+  const quando = quandoEfetivo(passo, indice)
 
   return (
     <div className="space-y-2">
       <Label>Quando</Label>
 
       {indice > 0 && (
-        <div className="flex gap-1.5" role="group" aria-label="Como marcar o quando">
-          <Button type="button" size="sm" variant={passo.quando === 'datas' ? 'default' : 'outline'} aria-pressed={passo.quando === 'datas'} disabled={disabled} onClick={() => aoMudar({ quando: 'datas' })}>
-            Data fixa
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Como marcar o quando">
+          <Button type="button" size="sm" variant={quando === 'apos' ? 'default' : 'outline'} aria-pressed={quando === 'apos'} disabled={disabled} onClick={() => aoMudar({ quando: 'apos' })}>
+            Logo depois do passo anterior
           </Button>
-          <Button type="button" size="sm" variant={passo.quando === 'depois' ? 'default' : 'outline'} aria-pressed={passo.quando === 'depois'} disabled={disabled} onClick={() => aoMudar({ quando: 'depois' })}>
+          <Button type="button" size="sm" variant={quando === 'depois' ? 'default' : 'outline'} aria-pressed={quando === 'depois'} disabled={disabled} onClick={() => aoMudar({ quando: 'depois' })}>
             Depois do início
+          </Button>
+          <Button type="button" size="sm" variant={quando === 'datas' ? 'default' : 'outline'} aria-pressed={quando === 'datas'} disabled={disabled} onClick={() => aoMudar({ quando: 'datas' })}>
+            Data fixa
           </Button>
         </div>
       )}
 
-      {passo.quando === 'depois' && indice > 0 ? (
+      {quando === 'apos' ? (
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">Pausa de</span>
+            <Input
+              type="number"
+              min={1}
+              inputMode="numeric"
+              className="w-24"
+              aria-label="Pausa depois do passo anterior"
+              value={passo.pausa}
+              disabled={disabled}
+              onChange={(e) => aoMudar({ pausa: e.target.value === '' ? '' : Number(e.target.value) })}
+            />
+            <div className="flex gap-1" role="group" aria-label="Unidade da pausa">
+              {(Object.keys(MINUTOS_POR_UNIDADE) as UnidadeDeAtraso[]).map((u) => (
+                <Button key={u} type="button" size="sm" variant={passo.unidadeDaPausa === u ? 'default' : 'outline'} aria-pressed={passo.unidadeDaPausa === u} disabled={disabled} onClick={() => aoMudar({ unidadeDaPausa: u })}>
+                  {ROTULO_DA_UNIDADE[u]}
+                </Button>
+              ))}
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Começa quando o passo anterior terminar de percorrer todos os grupos, mais esta pausa. O horário exato
+            aparece em “O que vai acontecer”. O painel confere a fila a cada minuto, então a pausa mínima é de 1 minuto.
+          </p>
+        </div>
+      ) : quando === 'depois' ? (
         <div className="space-y-1.5">
           <div className="flex items-center gap-2">
             <Input
@@ -277,7 +308,7 @@ export function ScheduleComposer({
       })}
 
       {passos.length < MAX_PASSOS && (
-        <Button type="button" variant="outline" className="gap-2" disabled={disabled} onClick={() => aoMudarPassos([...passos, passoVazio()])}>
+        <Button type="button" variant="outline" className="gap-2" disabled={disabled} onClick={() => aoMudarPassos([...passos, passoVazio('apos')])}>
           <Plus className="size-4" aria-hidden />
           Adicionar passo
         </Button>

@@ -5,6 +5,49 @@ Registrar aqui toda implementação, fix e decisão técnica relevante ao final 
 
 ---
 
+## 2026-10-24 — Agendamento: intervalo entre passos ("logo depois do anterior") + botao apagado sem motivo
+
+Primeiro teste do usuario: 3 passos (nome, descricao, mensagem), tudo preenchido, botao "Agendar"
+apagado e sem explicacao. Duas causas, as duas minhas.
+
+### O que travava
+
+1. **Regra de sobreposicao com o motivo escondido.** Passos so podem comecar depois que o anterior
+   termina de percorrer os grupos (senao os grupos dos dois se intercalam: renomear o grupo 3 antes
+   de mandar a mensagem ao grupo 2). Com varios grupos e 60 s de intervalo, isso exige passos
+   a ~10 min um do outro; datas iguais ou proximas barravam o botao. O motivo aparecia so numa
+   linha cinza minuscula embaixo do botao. **Agora e um alerta ambar** ("Ainda nao da para agendar: ...")
+   e a mensagem sugere a solucao.
+2. **Defeito na propria regra: ignorava a variacao (jitter) do intervalo.** A duracao usada era
+   (n-1) x intervalo; com 20% de variacao a ultima posicao cai ate 20% mais tarde, entao um passo
+   podia invadir o seguinte (10 grupos: 540 s + 60 s de folga era menos que os 648 s do pior caso).
+   `duracaoDaOcorrenciaMs` agora e de pior caso. Consequencia: pedidos que passavam raspando (10 grupos,
+   passos a 10 min) agora sao recusados.
+
+### Intervalo entre passos
+
+Nao existia: cada passo tinha so data fixa ou "depois do inicio". Novo modo, **padrao nos passos
+novos**: "Logo depois do passo anterior" + pausa configuravel (minutos/horas/dias, minimo 1 min).
+O passo comeca quando o anterior TERMINA (pior caso, com jitter) + a pausa; com varias datas no
+anterior conta a ultima. Resolvido no servidor (`aposAnteriorMin`), gravado como `offset` com o atraso
+equivalente so para a lista exibir. O primeiro passo continua exigindo data fixa; combinar "logo
+depois" com data ou atraso no mesmo passo e recusado (nao ignora em silencio).
+
+**Minimo de 1 min** porque o agendador confere a fila a cada minuto: nao da para prometer segundos.
+Entre DUAS acoes quaisquer do numero (inclusive passos diferentes) vale tambem o "Intervalo entre
+grupos" da tarefa, imposto pelo banco (`reserve_group_instance_slot`). Esse intervalo e da tarefa
+inteira (o mesmo para alteracao e mensagem); nao ha intervalo por passo.
+
+### Verificado
+
+- 43 checagens novas (cenario exato do usuario com 1, 3 e 10 grupos; pausas validas e invalidas;
+  combinacoes proibidas; ultima execucao do passo anterior; jitter; tela), mais 42 + 71 + 83 anteriores.
+- No navegador, reproduzido: data fixa na mesma hora -> botao apagado + alerta com o motivo;
+  "logo depois" -> libera; cronograma 10:00 -> 10:07 -> 10:18 (6 grupos, 60 s, pausas de 1 e 5 min).
+- `tsc` e `eslint` limpos. Nada rodou contra Supabase/uazapi reais ainda.
+
+---
+
 ## 2026-10-24 — Modulo de grupos, fase 5 (parcial): links curtos e amostra do evento `groups`
 
 Feito: links curtos com contagem de cliques. **Nao feito, de proposito: mensagem de boas-vindas

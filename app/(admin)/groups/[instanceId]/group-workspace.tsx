@@ -439,7 +439,14 @@ export function GroupWorkspace({ instanceId, instanceName, grupos, precisaAtuali
                 {agendar ? <CalendarClock className="size-4" aria-hidden /> : <Send className="size-4" aria-hidden />}
                 {agendar ? (agendando ? 'Agendando…' : 'Agendar para') : 'Enviar para'} {alvos.length} {alvos.length === 1 ? 'grupo' : 'grupos'}
               </Button>
-              {motivoParaNaoEnviar && alvos.length > 0 && (
+              {motivoParaNaoEnviar && agendar && (
+                <Alert className="border-amber-500/40">
+                  <TriangleAlert className="text-amber-400" aria-hidden />
+                  <AlertTitle>Ainda não dá para agendar</AlertTitle>
+                  <AlertDescription>{motivoParaNaoEnviar}</AlertDescription>
+                </Alert>
+              )}
+              {motivoParaNaoEnviar && !agendar && alvos.length > 0 && (
                 <p className="text-center text-xs text-muted-foreground">{motivoParaNaoEnviar}</p>
               )}
             </div>
